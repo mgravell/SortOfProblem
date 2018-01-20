@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace SortOfDemo
 {
@@ -39,14 +40,16 @@ namespace SortOfDemo
         {
             SomeType[] data;
             DateTime[] releaseDates;
-            ulong[] sortKeys;
-            int[] index;
+            ulong[] sortKeys, keysWorkspace;
+            int[] index, valuesWorkspace;
             using (new BasicTimer("allocating"))
             {
                 data = new SomeType[16 * 1024 * 1024];
                 releaseDates = new DateTime[data.Length];
                 sortKeys = new ulong[data.Length];
+                keysWorkspace= new ulong[data.Length];
                 index = new int[data.Length];
+                valuesWorkspace = new int[data.Length];
             }
 
             Populate(data);
@@ -67,7 +70,8 @@ namespace SortOfDemo
             DualArrayDates(data, releaseDates);
             DualArrayComposite(data, sortKeys);
             DualArrayIndexed(data, index, sortKeys);
-            DualArrayIndexedOptimized(data, index, sortKeys);
+            DualArrayIndexedIntroSort(data, index, sortKeys);
+            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace);
         }
 
 
@@ -205,7 +209,7 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
-        private static void DualArrayIndexedOptimized(SomeType[] data, int[] index, ulong[] sortKeys)
+        private static void DualArrayIndexedIntroSort(SomeType[] data, int[] index, ulong[] sortKeys)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
@@ -217,7 +221,25 @@ namespace SortOfDemo
             }
             using (new BasicTimer(Me() + " sort"))
             {
-                Helpers.Sort(sortKeys, index);
+                Helpers.IntroSort(sortKeys, index);
+            }
+            CheckData(data, index);
+            // no need to re-invent
+        }
+
+        private static void DualArrayIndexedRadixSort(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace)
+        {
+            using (new BasicTimer(Me() + " prepare"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    index[i] = i;
+                    sortKeys[i] = Sortable(in data[i]);
+                }
+            }
+            using (new BasicTimer(Me() + " sort"))
+            {
+                Helpers.RadixSort(sortKeys, index, keysWorkspace, valuesWorkspace);
             }
             CheckData(data, index);
             // no need to re-invent
@@ -331,6 +353,73 @@ namespace SortOfDemo
 
             return (uint)(value - Millenium).TotalSeconds;
         }
+
+        public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace)
+        {
+            fixed(ulong* k = keys)
+            fixed (int* v = values)
+            fixed (ulong* kw = keysWorkspace)
+            fixed (int* vw = valuesWorkspace)
+            {
+                RadixSort(k, v, kw, vw, Math.Min(keys.Length, values.Length));
+            }
+        }
+        private static unsafe void RadixSort(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
+            int len)
+        {
+            // number of bits our group will be long 
+            const int r = 4; // try to set this also to 2, 8 or 16 to see if it is quicker or not 
+
+            // number of bits of a C# int 
+            const int b = 64;
+
+            // counting and prefix arrays
+            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
+            const int CountLength = 1 << r;
+            int* count = stackalloc int[CountLength];
+            int* pref = stackalloc int[CountLength];
+
+            // number of groups 
+            int groups = (int)Math.Ceiling(b / (double)r);
+
+            // the mask to identify groups 
+            ulong mask = (1UL << r) - 1;
+
+            // the algorithm: 
+            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            {
+                // reset count array 
+                for (int j = 0; j < CountLength; j++)
+                    count[j] = 0;
+
+                // counting elements of the c-th group 
+                for (int i = 0; i < len; i++)
+                    count[(keys[i] >> shift) & mask]++;
+
+                // calculating prefixes 
+                pref[0] = 0;
+                for (int i = 1; i < CountLength; i++)
+                    pref[i] = pref[i - 1] + count[i - 1];
+
+                // from a[] to t[] elements ordered by c-th group 
+                for (int i = 0; i < len; i++)
+                {
+                    int j = pref[(keys[i] >> shift) & mask]++;
+                    keysWorkspace[j] = keys[i];
+                    valuesWorkspace[j] = values[i];
+                }
+
+                // a[]=t[] and start again until the last group
+
+                memcpy(new IntPtr(keys), new IntPtr(keysWorkspace), new UIntPtr((uint)(len* sizeof(ulong))));
+                memcpy(new IntPtr(values), new IntPtr(valuesWorkspace), new UIntPtr((uint)(len* sizeof(int))));
+            }
+            // a is sorted 
+        }
+
+        [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false)]
+        private static extern IntPtr memcpy(IntPtr dest, IntPtr src, UIntPtr count);
+
         // borrowed from core-clr, with massive special-casing
         // https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/mscorlib/src/System/Array.cs
         internal static void Sort(ulong* keys, int* values, int count)
@@ -340,7 +429,7 @@ namespace SortOfDemo
             IntrospectiveSort(keys, values, 0, count);
         }
 
-        public static void Sort(ulong[] keys, int[] values)
+        public static void IntroSort(ulong[] keys, int[] values)
         {
             fixed (ulong* k = keys)
             fixed (int * v = values)
