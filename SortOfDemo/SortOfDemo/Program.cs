@@ -8,24 +8,25 @@ using System.Threading.Tasks;
 
 namespace SortOfDemo
 {
+    struct BasicTimer : IDisposable
+    {
+        Stopwatch _timer;
+        string _message { get; }
+        public BasicTimer(string message)
+        {
+            _message = message;
+            Console.WriteLine($"> {message}...");
+            _timer = Stopwatch.StartNew();
+        }
+        void IDisposable.Dispose()
+        {
+            _timer.Stop();
+            Console.WriteLine($"< {_message}, {_timer.ElapsedMilliseconds}ms");
+        }
+    }
     class Program
     {
-        struct BasicTimer : IDisposable
-        {
-            Stopwatch _timer;
-            string _message { get; }
-            public BasicTimer(string message)
-            {
-                _message = message;
-                Console.WriteLine($"> {message}...");
-                _timer = Stopwatch.StartNew();
-            }
-            void IDisposable.Dispose()
-            {
-                _timer.Stop();
-                Console.WriteLine($"< {_message}, {_timer.ElapsedMilliseconds}ms");
-            }
-        }
+
         static void Main()
         {
             try
@@ -39,6 +40,7 @@ namespace SortOfDemo
         }
         static void Execute()
         {
+            Console.WriteLine($"Processor count: {Environment.ProcessorCount}");
             SomeType[] data;
             DateTime[] releaseDates;
             ulong[] sortKeys, keysWorkspace;
@@ -48,7 +50,7 @@ namespace SortOfDemo
                 data = new SomeType[16 * 1024 * 1024];
                 releaseDates = new DateTime[data.Length];
                 sortKeys = new ulong[data.Length];
-                keysWorkspace= new ulong[data.Length];
+                keysWorkspace = new ulong[data.Length];
                 index = new int[data.Length];
                 valuesWorkspace = new int[data.Length];
             }
@@ -64,16 +66,22 @@ namespace SortOfDemo
             }
 
 
-            //LINQ(data);
-            //ArraySortComparable(data);
-            //ArraySortComparer(data);
-            //ArraySortComparison(data);
-            //DualArrayDates(data, releaseDates);
-            //DualArrayComposite(data, sortKeys);
+            LINQ(data);
+            ArraySortComparable(data);
+            ArraySortComparer(data);
+            ArraySortComparison(data);
+            DualArrayDates(data, releaseDates);
+            DualArrayComposite(data, sortKeys);
             DualArrayIndexed(data, index, sortKeys);
             DualArrayIndexedIntroSort(data, index, sortKeys);
-            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace);
+            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
+            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
+            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
+            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
         }
 
 
@@ -229,7 +237,7 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
-        private static void DualArrayIndexedRadixSort(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace)
+        private static void DualArrayIndexedRadixSort(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
@@ -239,15 +247,15 @@ namespace SortOfDemo
                     sortKeys[i] = Sortable(in data[i]);
                 }
             }
-            using (new BasicTimer(Me() + " sort"))
+            using (new BasicTimer(Me() + " sort, r=" + r))
             {
-                Helpers.RadixSort(sortKeys, index, keysWorkspace, valuesWorkspace);
+                Helpers.RadixSort(sortKeys, index, keysWorkspace, valuesWorkspace, r);
             }
             CheckData(data, index);
             // no need to re-invent
         }
 
-        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace)
+        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
@@ -257,9 +265,9 @@ namespace SortOfDemo
                     sortKeys[i] = Sortable(in data[i]);
                 }
             }
-            using (new BasicTimer(Me() + " sort"))
+            using (new BasicTimer(Me() + " sort, r=" + r))
             {
-                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace);
+                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace, r);
             }
             CheckData(data, index);
             // no need to re-invent
@@ -267,7 +275,7 @@ namespace SortOfDemo
 
         static readonly DateTime Epoch = new DateTime(
             2005, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        
+
         private static void Populate(SomeType[] data)
         {
             using (new BasicTimer("inventing data"))
@@ -374,29 +382,26 @@ namespace SortOfDemo
             return (uint)(value - Millenium).TotalSeconds;
         }
 
-        public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace)
+        public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
         {
-            fixed(ulong* k = keys)
+            fixed (ulong* k = keys)
             fixed (int* v = values)
             fixed (ulong* kw = keysWorkspace)
             fixed (int* vw = valuesWorkspace)
             {
-                RadixSort(k, v, kw, vw, Math.Min(keys.Length, values.Length));
+                RadixSort(k, v, kw, vw, Math.Min(keys.Length, values.Length), r);
             }
         }
         private static unsafe void RadixSort(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
-            int len)
+            int len, int r = 4)
         {
-            // number of bits our group will be long 
-            const int r = 4; // try to set this also to 2, 8 or 16 to see if it is quicker or not 
-
-            // number of bits of a C# int 
-            const int b = 64;
+            // number of bits in the keys
+            const int b = sizeof(ulong) * 8;
 
             bool swapped = false;
             // counting and prefix arrays
             // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
-            const int CountLength = 1 << r;
+            int CountLength = 1 << r;
             int* count = stackalloc int[CountLength];
             int* pref = stackalloc int[CountLength];
 
@@ -404,7 +409,7 @@ namespace SortOfDemo
             int groups = (int)Math.Ceiling(b / (double)r);
 
             // the mask to identify groups 
-            const ulong mask = (1UL << r) - 1;
+            ulong mask = (1UL << r) - 1;
 
             // the algorithm: 
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
@@ -446,7 +451,7 @@ namespace SortOfDemo
             }
             // a is sorted
 
-            if(swapped)
+            if (swapped)
             {
                 memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
                 memcpy(new IntPtr(valuesWorkspace), new IntPtr(values), new UIntPtr((uint)(len * sizeof(int))));
@@ -477,36 +482,35 @@ namespace SortOfDemo
                     count[(*keys++ >> shift) & mask]++;
 
                 // now update the origin data, synchronized
-                lock(SyncLock)
+                lock (SyncLock)
                 {
                     for (int i = 0; i < CountLength; i++)
                         Counts[i] += count[i];
-                }                
+                }
             }
         }
 
-        public static void RadixSortParallel(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace)
+        public static void RadixSortParallel(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
         {
             fixed (ulong* k = keys)
             fixed (int* v = values)
             fixed (ulong* kw = keysWorkspace)
             fixed (int* vw = valuesWorkspace)
             {
-                RadixSortParallel(k, v, kw, vw, Math.Min(keys.Length, values.Length));
+                RadixSortParallel(k, v, kw, vw, Math.Min(keys.Length, values.Length), r);
             }
         }
         private static unsafe void RadixSortParallel(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
-    int len)
+    int len, int r = 4)
         {
             // number of bits our group will be long 
-            const int r = 4; // try to set this also to 2, 8 or 16 to see if it is quicker or not 
 
-            // number of bits of a C# int 
-            const int b = 64;
+            // number of bits in the keys
+            const int b = sizeof(ulong) * 8;
 
             // counting and prefix arrays
             // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
-            const int CountLength = 1 << r;
+            int CountLength = 1 << r;
             int* count = stackalloc int[CountLength];
             int* pref = stackalloc int[CountLength];
 
@@ -514,26 +518,29 @@ namespace SortOfDemo
             int groups = (int)Math.Ceiling(b / (double)r);
 
             // the mask to identify groups 
-            const ulong mask = (1UL << r) - 1;
+            ulong mask = (1UL << r) - 1;
 
             // configure our workers
-            int workerCount = groups;
+            int workerCount = Environment.ProcessorCount * 2;
             int blockSize = len / workerCount;
             if ((len % workerCount) != 0) blockSize++;
-            
+
             var workers = new Worker[workerCount];
             var workerInvoke = new Action[workerCount];
             int remaining = len;
             object syncLock = null;
             int offset = 0;
             for (int i = 0; i < workerCount; i++)
-            {                
+            {
                 var lenThisBlock = Math.Min(blockSize, remaining);
                 remaining -= lenThisBlock;
                 var worker = new Worker
                 {
-                    Counts = count, CountLength = CountLength,
-                    Length = lenThisBlock, Mask = mask, Offset = offset
+                    Counts = count,
+                    CountLength = CountLength,
+                    Length = lenThisBlock,
+                    Mask = mask,
+                    Offset = offset
                 };
                 offset += lenThisBlock;
                 if (i == 0) syncLock = worker; // use the first worker as the lock
@@ -613,12 +620,12 @@ namespace SortOfDemo
         public static void IntroSort(ulong[] keys, int[] values)
         {
             fixed (ulong* k = keys)
-            fixed (int * v = values)
+            fixed (int* v = values)
             {
                 Sort(k, v, Math.Min(keys.Length, values.Length));
             }
         }
-        
+
         // borrowed from core-clr, with massive special-casing
         // https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/mscorlib/src/System/Collections/Generic/ArraySortHelper.cs
         internal static void IntrospectiveSort(ulong* keys, int* values, int left, int length)
