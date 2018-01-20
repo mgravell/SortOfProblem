@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace SortOfDemo
 {
@@ -63,15 +64,16 @@ namespace SortOfDemo
             }
 
 
-            LINQ(data);
-            ArraySortComparable(data);
-            ArraySortComparer(data);
-            ArraySortComparison(data);
-            DualArrayDates(data, releaseDates);
-            DualArrayComposite(data, sortKeys);
+            //LINQ(data);
+            //ArraySortComparable(data);
+            //ArraySortComparer(data);
+            //ArraySortComparison(data);
+            //DualArrayDates(data, releaseDates);
+            //DualArrayComposite(data, sortKeys);
             DualArrayIndexed(data, index, sortKeys);
             DualArrayIndexedIntroSort(data, index, sortKeys);
             DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace);
         }
 
 
@@ -245,6 +247,24 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
+        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace)
+        {
+            using (new BasicTimer(Me() + " prepare"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    index[i] = i;
+                    sortKeys[i] = Sortable(in data[i]);
+                }
+            }
+            using (new BasicTimer(Me() + " sort"))
+            {
+                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace);
+            }
+            CheckData(data, index);
+            // no need to re-invent
+        }
+
         static readonly DateTime Epoch = new DateTime(
             2005, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         
@@ -373,6 +393,7 @@ namespace SortOfDemo
             // number of bits of a C# int 
             const int b = 64;
 
+            bool swapped = false;
             // counting and prefix arrays
             // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
             const int CountLength = 1 << r;
@@ -383,7 +404,7 @@ namespace SortOfDemo
             int groups = (int)Math.Ceiling(b / (double)r);
 
             // the mask to identify groups 
-            ulong mask = (1UL << r) - 1;
+            const ulong mask = (1UL << r) - 1;
 
             // the algorithm: 
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
@@ -411,11 +432,171 @@ namespace SortOfDemo
 
                 // a[]=t[] and start again until the last group
 
-                memcpy(new IntPtr(keys), new IntPtr(keysWorkspace), new UIntPtr((uint)(len* sizeof(ulong))));
-                memcpy(new IntPtr(values), new IntPtr(valuesWorkspace), new UIntPtr((uint)(len* sizeof(int))));
+                // swap the pointers for the next iteration - so we use the "keys"
+                // as the "keysWorkspace" on the 2nd/4th/6th loops
+                var tmp0 = keys;
+                keys = keysWorkspace;
+                keysWorkspace = tmp0;
+
+                var tmp1 = values;
+                values = valuesWorkspace;
+                valuesWorkspace = tmp1;
+
+                swapped = !swapped;
+            }
+            // a is sorted
+
+            if(swapped)
+            {
+                memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
+                memcpy(new IntPtr(valuesWorkspace), new IntPtr(values), new UIntPtr((uint)(len * sizeof(int))));
+            }
+        }
+
+
+        unsafe class Worker
+        {
+            public int* Counts { get; set; }
+            public int CountLength { get; set; }
+            public ulong Mask { get; set; }
+            public ulong* Keys { get; set; }
+            public int Length { get; set; }
+            public int Offset { get; set; }
+            public int Shift { get; set; }
+            public object SyncLock { get; set; }
+            public void Invoke()
+            {
+                var len = Length;
+                var mask = Mask;
+                var keys = Keys + Offset;
+                var shift = Shift;
+                int* count = stackalloc int[CountLength];
+
+                // count into a local buffer
+                for (int i = 0; i < len; i++)
+                    count[(*keys++ >> shift) & mask]++;
+
+                // now update the origin data, synchronized
+                lock(SyncLock)
+                {
+                    for (int i = 0; i < CountLength; i++)
+                        Counts[i] += count[i];
+                }                
+            }
+        }
+
+        public static void RadixSortParallel(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace)
+        {
+            fixed (ulong* k = keys)
+            fixed (int* v = values)
+            fixed (ulong* kw = keysWorkspace)
+            fixed (int* vw = valuesWorkspace)
+            {
+                RadixSortParallel(k, v, kw, vw, Math.Min(keys.Length, values.Length));
+            }
+        }
+        private static unsafe void RadixSortParallel(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
+    int len)
+        {
+            // number of bits our group will be long 
+            const int r = 4; // try to set this also to 2, 8 or 16 to see if it is quicker or not 
+
+            // number of bits of a C# int 
+            const int b = 64;
+
+            // counting and prefix arrays
+            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
+            const int CountLength = 1 << r;
+            int* count = stackalloc int[CountLength];
+            int* pref = stackalloc int[CountLength];
+
+            // number of groups 
+            int groups = (int)Math.Ceiling(b / (double)r);
+
+            // the mask to identify groups 
+            const ulong mask = (1UL << r) - 1;
+
+            // configure our workers
+            int workerCount = groups;
+            int blockSize = len / workerCount;
+            if ((len % workerCount) != 0) blockSize++;
+            
+            var workers = new Worker[workerCount];
+            var workerInvoke = new Action[workerCount];
+            int remaining = len;
+            object syncLock = null;
+            int offset = 0;
+            for (int i = 0; i < workerCount; i++)
+            {                
+                var lenThisBlock = Math.Min(blockSize, remaining);
+                remaining -= lenThisBlock;
+                var worker = new Worker
+                {
+                    Counts = count, CountLength = CountLength,
+                    Length = lenThisBlock, Mask = mask, Offset = offset
+                };
+                offset += lenThisBlock;
+                if (i == 0) syncLock = worker; // use the first worker as the lock
+                worker.SyncLock = syncLock;
+                workers[i] = worker;
+                workerInvoke[i] = worker.Invoke;
+            }
+            Debug.Assert(remaining == 0, "Failed to calculate block sizes correctly");
+
+            // the algorithm:
+            bool swapped = false;
+            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            {
+                // reset count array 
+                for (int j = 0; j < CountLength; j++)
+                    count[j] = 0;
+
+                // set the shift on the workers
+                foreach (var worker in workers)
+                {
+                    worker.Shift = shift;
+                    worker.Keys = keys;
+                }
+
+                // counting elements of the c-th group
+                Parallel.Invoke(workerInvoke);
+
+                // calculating prefixes 
+                pref[0] = 0;
+                for (int i = 1; i < CountLength; i++)
+                    pref[i] = pref[i - 1] + count[i - 1];
+
+                // from a[] to t[] elements ordered by c-th group 
+                for (int i = 0; i < len; i++)
+                {
+                    int j = pref[(keys[i] >> shift) & mask]++;
+                    keysWorkspace[j] = keys[i];
+                    valuesWorkspace[j] = values[i];
+                }
+
+                // a[]=t[] and start again until the last group
+
+                // swap the pointers for the next iteration - so we use the "keys"
+                // as the "keysWorkspace" on the 2nd/4th/6th loops
+                var tmp0 = keys;
+                keys = keysWorkspace;
+                keysWorkspace = tmp0;
+
+                var tmp1 = values;
+                values = valuesWorkspace;
+                valuesWorkspace = tmp1;
+
+                swapped = !swapped;
             }
             // a is sorted 
+
+            if (swapped)
+            {
+                memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
+                memcpy(new IntPtr(valuesWorkspace), new IntPtr(values), new UIntPtr((uint)(len * sizeof(int))));
+            }
         }
+
 
         [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false)]
         private static extern IntPtr memcpy(IntPtr dest, IntPtr src, UIntPtr count);
