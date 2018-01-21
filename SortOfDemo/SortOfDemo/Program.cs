@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using System.Threading.Tasks;
 
 namespace SortOfDemo
@@ -516,6 +518,91 @@ namespace SortOfDemo
                 // counting elements of the c-th group 
                 for (int i = 0; i < len; i++)
                     count[(keys[i] >> shift) & mask]++;
+
+                // calculating prefixes 
+                pref[0] = 0;
+                for (int i = 1; i < CountLength; i++)
+                    pref[i] = pref[i - 1] + count[i - 1];
+
+                // from a[] to t[] elements ordered by c-th group 
+                for (int i = 0; i < len; i++)
+                {
+                    int j = pref[(keys[i] >> shift) & mask]++;
+                    keysWorkspace[j] = keys[i];
+                    valuesWorkspace[j] = values[i];
+                }
+
+                // a[]=t[] and start again until the last group
+
+                // swap the pointers for the next iteration - so we use the "keys"
+                // as the "keysWorkspace" on the 2nd/4th/6th loops
+                var tmp0 = keys;
+                keys = keysWorkspace;
+                keysWorkspace = tmp0;
+
+                var tmp1 = values;
+                values = valuesWorkspace;
+                valuesWorkspace = tmp1;
+
+                swapped = !swapped;
+            }
+            // a is sorted
+
+            if (swapped)
+            {
+                Unsafe.CopyBlock(keysWorkspace, keys, (uint)(len * sizeof(ulong)));
+                Unsafe.CopyBlock(valuesWorkspace, values, (uint)(len * sizeof(int)));
+            }
+        }
+
+        private static unsafe void RadixSortVectorized(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
+    int len, int r = 4)
+        {
+            // number of bits in the keys
+            const int b = sizeof(ulong) * 8;
+
+            bool swapped = false;
+            // counting and prefix arrays
+            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
+            int CountLength = 1 << r;
+            int* count = stackalloc int[CountLength];
+            int* pref = stackalloc int[CountLength];
+
+            // number of groups 
+            int groups = (int)Math.Ceiling(b / (double)r);
+
+            // the mask to identify groups 
+            ulong mask = (1UL << r) - 1;
+
+            //int vectorizedLength = len / Vector<ulong>.Count;
+            //var maskVector = new Vector<ulong>(mask);
+
+            //int* vectorCounts = stackalloc int[len];
+            // the algorithm: 
+            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            {
+                // reset count array 
+                for (int j = 0; j < CountLength; j++)
+                    count[j] = 0;
+
+                // counting elements of the c-th group
+                ulong* ptr = keys;
+                for (int i = 0; i < len; i++)
+                {
+                    // todo: simplify to one expression
+                    
+                    var x = Unsafe.Read<Vector256<ulong>>(ptr);
+                    Avx2.ShiftRightLogical(x, (byte)shift);
+                    //Vector<ulong> x = Unsafe.Read<ulong>(ptr) >> shift;
+                    //Vector<ulong> v = Vector.BitwiseAnd(x, maskVector);
+
+                    //ptr += vectorizedLength;
+                    //Unsafe.Write<Vector<ulong>>(vectorCounts, v);
+                    //for(int j = 0; j < Vector<ulong>.Count; j++)
+                    //{
+                    //    count[vectorCounts[j]]++;
+                    //}
+                }
 
                 // calculating prefixes 
                 pref[0] = 0;
