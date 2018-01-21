@@ -1,4 +1,6 @@
-﻿using System;
+﻿//#define USE_TIME
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -71,6 +73,7 @@ namespace SortOfDemo
             ArraySortComparer(data);
             ArraySortComparison(data);
             DualArrayDates(data, releaseDates);
+#if USE_TIME
             DualArrayComposite(data, sortKeys);
             DualArrayIndexed(data, index, sortKeys);
             DualArrayIndexedIntroSort(data, index, sortKeys);
@@ -82,6 +85,9 @@ namespace SortOfDemo
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
+#else
+            ArraySortCombinedIndex(data, index, sortKeys);
+#endif
         }
 
 
@@ -273,6 +279,45 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
+        static void ArraySortCombinedIndex(SomeType[] data, int[] index, ulong[] sortKeys)
+        {
+            using (new BasicTimer(Me() + " prepare"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    ref var d = ref data[i];
+                    var key = 0ul;
+
+                    // Encode date (most important field first, inverted/descending sort)
+                    // Use 366 days in a year to allow leap years (or find out num days between 2005-2055)
+                    key += (50*366 - 1) - (ulong)(d.ReleaseDate - Epoch).TotalDays;
+
+                    // Encode price
+                    key *= 50_000_000;
+                    key += (ulong)(d.Price * 1000);
+
+                    // Encode index (must be in LSBs)
+                    // Including index in sortkey also guarantees unique keys, which could be used in optimized sort
+                    key *= (1 << 24);
+                    key += (ulong)i;
+
+                    sortKeys[i] = key;
+                }
+            }
+            using (new BasicTimer(Me() + " sort"))
+            {
+                Array.Sort(sortKeys);
+            }
+            using (new BasicTimer(Me() + " index recovery"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    index[i] = (int)(sortKeys[i] & ((1 << 24) - 1));
+                }
+            }
+            CheckData(data, index);
+        }
+
         static readonly DateTime Epoch = new DateTime(
             2005, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -287,8 +332,11 @@ namespace SortOfDemo
                     var releaseDate = Epoch
                         .AddYears(rand.Next(50))
                         .AddDays(rand.Next(365))
-                        .AddSeconds(rand.Next(24 * 60 * 60));
-                    var price = rand.NextDouble() * 50000;
+#if USE_TIME
+                        .AddSeconds(rand.Next(24 * 60 * 60))
+#endif
+                        ;
+                    var price = rand.Next(50_000_000) / 1_000d;
                     data[i] = new SomeType(
                         id, releaseDate, price);
                 }
