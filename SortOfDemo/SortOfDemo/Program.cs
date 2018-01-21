@@ -1,4 +1,4 @@
-﻿//#define USE_TIME
+﻿#define USE_TIME
 
 using System;
 using System.Collections.Generic;
@@ -73,7 +73,6 @@ namespace SortOfDemo
             ArraySortComparer(data);
             ArraySortComparison(data);
             DualArrayDates(data, releaseDates);
-#if USE_TIME
             DualArrayComposite(data, sortKeys);
             DualArrayIndexed(data, index, sortKeys);
             DualArrayIndexedIntroSort(data, index, sortKeys);
@@ -85,38 +84,45 @@ namespace SortOfDemo
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
-#else
+#if !USE_TIME
             ArraySortCombinedIndex(data, index, sortKeys);
 #endif
         }
 
 
 
-        static void CheckData(SomeType[] data)
+        static void CheckData(SomeType[] data, bool asFloat = false)
         {
             using (new BasicTimer("checking order"))
             {
                 for (int i = 1; i < data.Length; i++)
                 {
-                    AssertOrdered(in data[i - 1], in data[i]);
+                    AssertOrdered(in data[i - 1], in data[i], asFloat);
                 }
             }
         }
 
-        static void CheckData(SomeType[] data, int[] index)
+        static void CheckData(SomeType[] data, int[] index, bool asFloat = false)
         {
             using (new BasicTimer("checking order"))
             {
                 for (int i = 1; i < data.Length; i++)
                 {
-                    AssertOrdered(in data[index[i - 1]], in data[index[i]]);
+                    AssertOrdered(in data[index[i - 1]], in data[index[i]], asFloat);
                 }
             }
         }
-        static void AssertOrdered(in SomeType x, in SomeType y)
+        static void AssertOrdered(in SomeType x, in SomeType y, bool asFloat)
         {
             if (x.ReleaseDate > y.ReleaseDate) return;
-            if (x.ReleaseDate == y.ReleaseDate && x.Price <= y.Price) return;
+            if (asFloat)
+            {
+                if (x.ReleaseDate == y.ReleaseDate && (float)x.Price <= (float)y.Price) return;
+            }
+            else
+            {
+                if (x.ReleaseDate == y.ReleaseDate && x.Price <= y.Price) return;
+            }
 
             throw new InvalidOperationException($"incorrect sort; {x.ReleaseDate}/{x.Price} [{Sortable(x)}] vs {y.ReleaseDate}/{y.Price} [{Sortable(y)}]");
         }
@@ -203,7 +209,7 @@ namespace SortOfDemo
             {
                 Array.Sort(sortKeys, data);
             }
-            CheckData(data);
+            CheckData(data, asFloat: true);
             Populate(data); // need to re-invent
         }
 
@@ -221,7 +227,7 @@ namespace SortOfDemo
             {
                 Array.Sort(sortKeys, index);
             }
-            CheckData(data, index);
+            CheckData(data, index, asFloat: true);
             // no need to re-invent
         }
 
@@ -239,7 +245,7 @@ namespace SortOfDemo
             {
                 Helpers.IntroSort(sortKeys, index);
             }
-            CheckData(data, index);
+            CheckData(data, index, asFloat: true);
             // no need to re-invent
         }
 
@@ -257,7 +263,7 @@ namespace SortOfDemo
             {
                 Helpers.RadixSort(sortKeys, index, keysWorkspace, valuesWorkspace, r);
             }
-            CheckData(data, index);
+            CheckData(data, index, asFloat: true);
             // no need to re-invent
         }
 
@@ -275,7 +281,7 @@ namespace SortOfDemo
             {
                 Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace, r);
             }
-            CheckData(data, index);
+            CheckData(data, index, asFloat: true);
             // no need to re-invent
         }
 
