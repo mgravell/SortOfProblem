@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
 namespace SortOfDemo
@@ -71,8 +70,7 @@ namespace SortOfDemo
             {
                 Console.WriteLine("data is unsorted, as intended");
             }
-
-
+            
             LINQ(data);
             ArraySortComparable(data);
             ArraySortComparer(data);
@@ -550,8 +548,8 @@ namespace SortOfDemo
 
             if (swapped)
             {
-                memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
-                memcpy(new IntPtr(valuesWorkspace), new IntPtr(values), new UIntPtr((uint)(len * sizeof(int))));
+                Unsafe.CopyBlock(keysWorkspace, keys, (uint)(len * sizeof(ulong)));
+                Unsafe.CopyBlock(valuesWorkspace, values, (uint)(len * sizeof(int)));
             }
         }
 
@@ -610,7 +608,7 @@ namespace SortOfDemo
 
             if (swapped)
             {
-                memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
+                Unsafe.CopyBlock(keysWorkspace, keys, (uint)(len * sizeof(ulong)));
             }
         }
 
@@ -755,15 +753,11 @@ namespace SortOfDemo
 
             if (swapped)
             {
-                memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
-                memcpy(new IntPtr(valuesWorkspace), new IntPtr(values), new UIntPtr((uint)(len * sizeof(int))));
+                Unsafe.CopyBlock(keysWorkspace, keys, (uint)(len * sizeof(ulong)));
+                Unsafe.CopyBlock(valuesWorkspace, values, (uint)(len * sizeof(int)));
             }
         }
-
-
-        [DllImport("msvcrt.dll", EntryPoint = "memcpy", CallingConvention = CallingConvention.Cdecl, SetLastError = false)]
-        private static extern IntPtr memcpy(IntPtr dest, IntPtr src, UIntPtr count);
-
+        
         // borrowed from core-clr, with massive special-casing
         // https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/mscorlib/src/System/Array.cs
         internal static void Sort(ulong* keys, int* values, int count)
