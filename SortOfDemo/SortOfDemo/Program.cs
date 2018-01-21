@@ -556,7 +556,7 @@ namespace SortOfDemo
         private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r = 4)
         {
             // number of bits in the keys
-            const int b = sizeof(ulong) * 8;
+            const int b = (sizeof(ulong) - 3) * 8;
 
             bool swapped = false;
             // counting and prefix arrays
@@ -572,7 +572,7 @@ namespace SortOfDemo
             ulong mask = (1UL << r) - 1;
 
             // the algorithm: 
-            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            for (int c = 0, shift = 24; c < groups; c++, shift += r)
             {
                 // reset count array 
                 for (int j = 0; j < CountLength; j++)
