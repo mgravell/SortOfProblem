@@ -1,4 +1,4 @@
-﻿#define USE_TIME
+﻿// #define USE_TIME
 
 using System;
 using System.Collections.Generic;
@@ -43,6 +43,11 @@ namespace SortOfDemo
         static void Execute()
         {
             Console.WriteLine($"Processor count: {Environment.ProcessorCount}");
+#if USE_TIME
+            Console.WriteLine($"Release date is to the second; some tests disabled");
+#else
+            Console.WriteLine($"Release date is to the day; all tests enabled (but less resolution on date)");
+#endif
             SomeType[] data;
             DateTime[] releaseDates;
             ulong[] sortKeys, keysWorkspace;
@@ -86,6 +91,10 @@ namespace SortOfDemo
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
 #if !USE_TIME
             ArraySortCombinedIndex(data, index, sortKeys);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
 #endif
         }
 
@@ -285,34 +294,59 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
+        static ulong CombinedKey(in SomeType d, int i)
+        {
+            var key = 0ul;
+
+            // Encode date (most important field first, inverted/descending sort)
+            // Use 366 days in a year to allow leap years (or find out num days between 2005-2055)
+            key += (50 * 366 - 1) - (ulong)(d.ReleaseDate - Epoch).TotalDays;
+
+            // Encode price
+            key *= 50_000_000;
+            key += (ulong)(d.Price * 1000);
+
+            // Encode index (must be in LSBs)
+            // Including index in sortkey also guarantees unique keys, which could be used in optimized sort
+            key *= (1 << 24);
+            key += (ulong)i;
+            return key;
+        }
         static void ArraySortCombinedIndex(SomeType[] data, int[] index, ulong[] sortKeys)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
                 for (int i = 0; i < data.Length; i++)
                 {
-                    ref var d = ref data[i];
-                    var key = 0ul;
-
-                    // Encode date (most important field first, inverted/descending sort)
-                    // Use 366 days in a year to allow leap years (or find out num days between 2005-2055)
-                    key += (50*366 - 1) - (ulong)(d.ReleaseDate - Epoch).TotalDays;
-
-                    // Encode price
-                    key *= 50_000_000;
-                    key += (ulong)(d.Price * 1000);
-
-                    // Encode index (must be in LSBs)
-                    // Including index in sortkey also guarantees unique keys, which could be used in optimized sort
-                    key *= (1 << 24);
-                    key += (ulong)i;
-
-                    sortKeys[i] = key;
+                    sortKeys[i] = CombinedKey(in data[i], i);
                 }
             }
             using (new BasicTimer(Me() + " sort"))
             {
                 Array.Sort(sortKeys);
+            }
+            using (new BasicTimer(Me() + " index recovery"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    index[i] = (int)(sortKeys[i] & ((1 << 24) - 1));
+                }
+            }
+            CheckData(data, index);
+        }
+
+        static void RadixSortCombinedIndex(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int r)
+        {
+            using (new BasicTimer(Me() + " prepare"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    sortKeys[i] = CombinedKey(in data[i], i);
+                }
+            }
+            using (new BasicTimer(Me() + " sort, r=" + r))
+            {
+                Helpers.RadixSort(sortKeys, keysWorkspace, r);
             }
             using (new BasicTimer(Me() + " index recovery"))
             {
@@ -436,6 +470,15 @@ namespace SortOfDemo
             return (uint)(value - Millenium).TotalSeconds;
         }
 
+        public static void RadixSort(ulong[] keys,ulong[] keysWorkspace, int r = 4)
+        {
+            fixed (ulong* k = keys)
+            fixed (ulong* kw = keysWorkspace)
+            {
+                RadixSort(k, kw, keys.Length, r);
+            }
+        }
+
         public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
         {
             fixed (ulong* k = keys)
@@ -509,6 +552,65 @@ namespace SortOfDemo
             {
                 memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
                 memcpy(new IntPtr(valuesWorkspace), new IntPtr(values), new UIntPtr((uint)(len * sizeof(int))));
+            }
+        }
+
+        private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r = 4)
+        {
+            // number of bits in the keys
+            const int b = sizeof(ulong) * 8;
+
+            bool swapped = false;
+            // counting and prefix arrays
+            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
+            int CountLength = 1 << r;
+            int* count = stackalloc int[CountLength];
+            int* pref = stackalloc int[CountLength];
+
+            // number of groups 
+            int groups = (int)Math.Ceiling(b / (double)r);
+
+            // the mask to identify groups 
+            ulong mask = (1UL << r) - 1;
+
+            // the algorithm: 
+            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            {
+                // reset count array 
+                for (int j = 0; j < CountLength; j++)
+                    count[j] = 0;
+
+                // counting elements of the c-th group 
+                for (int i = 0; i < len; i++)
+                    count[(keys[i] >> shift) & mask]++;
+
+                // calculating prefixes 
+                pref[0] = 0;
+                for (int i = 1; i < CountLength; i++)
+                    pref[i] = pref[i - 1] + count[i - 1];
+
+                // from a[] to t[] elements ordered by c-th group 
+                for (int i = 0; i < len; i++)
+                {
+                    int j = pref[(keys[i] >> shift) & mask]++;
+                    keysWorkspace[j] = keys[i];
+                }
+
+                // a[]=t[] and start again until the last group
+
+                // swap the pointers for the next iteration - so we use the "keys"
+                // as the "keysWorkspace" on the 2nd/4th/6th loops
+                var tmp0 = keys;
+                keys = keysWorkspace;
+                keysWorkspace = tmp0;
+
+                swapped = !swapped;
+            }
+            // a is sorted
+
+            if (swapped)
+            {
+                memcpy(new IntPtr(keysWorkspace), new IntPtr(keys), new UIntPtr((uint)(len * sizeof(ulong))));
             }
         }
 
