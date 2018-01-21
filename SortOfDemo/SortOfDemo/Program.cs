@@ -92,6 +92,7 @@ namespace SortOfDemo
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
 #endif
         }
@@ -344,7 +345,7 @@ namespace SortOfDemo
             }
             using (new BasicTimer(Me() + " sort, r=" + r))
             {
-                Helpers.RadixSort(sortKeys, keysWorkspace, r);
+                Helpers.RadixSort(sortKeys, keysWorkspace, r, 40);
             }
             using (new BasicTimer(Me() + " index recovery"))
             {
@@ -468,12 +469,12 @@ namespace SortOfDemo
             return (uint)(value - Millenium).TotalSeconds;
         }
 
-        public static void RadixSort(ulong[] keys,ulong[] keysWorkspace, int r = 4)
+        public static void RadixSort(ulong[] keys,ulong[] keysWorkspace, int r = 4, int cmpLen = 64)
         {
             fixed (ulong* k = keys)
             fixed (ulong* kw = keysWorkspace)
             {
-                RadixSort(k, kw, keys.Length, r);
+                RadixSort(k, kw, keys.Length, r, cmpLen);
             }
         }
 
@@ -553,11 +554,8 @@ namespace SortOfDemo
             }
         }
 
-        private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r = 4)
+        private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r = 4, int cmpLen = 64)
         {
-            // number of bits in the keys
-            const int b = (sizeof(ulong) - 3) * 8;
-
             bool swapped = false;
             // counting and prefix arrays
             // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
@@ -566,7 +564,7 @@ namespace SortOfDemo
             int* pref = stackalloc int[CountLength];
 
             // number of groups 
-            int groups = (int)Math.Ceiling(b / (double)r);
+            int groups = (int)Math.Ceiling(cmpLen / (double)r);
 
             // the mask to identify groups 
             ulong mask = (1UL << r) - 1;
