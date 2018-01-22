@@ -110,20 +110,33 @@ namespace SortOfDemo
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 10);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 16);
 #if !USE_TIME
-            //ArraySortCombinedIndex(data, index, sortKeys);
+            ArraySortCombinedIndex(data, index, sortKeys);
 
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
 
-            //const ulong mask = (ulong.MaxValue) << 24;
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
-            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
+            const ulong mask = (ulong.MaxValue) << 24;
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
+
+
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16);
+
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2, mask);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4, mask);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8, mask);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10, mask);
+            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16, mask);
 #endif
         }
 
@@ -393,6 +406,29 @@ namespace SortOfDemo
             CheckData(data, index);
         }
 
+        static void RadixSortCombinedIndexSpan(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int r, ulong keyMask = ulong.MaxValue)
+        {
+            using (new BasicTimer(Me() + " prepare"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    sortKeys[i] = CombinedKey(in data[i], i);
+                }
+            }
+            using (new BasicTimer(Me() + " sort, r=" + r + ", bits: " + HammingWeight(keyMask)))
+            {
+                Helpers.RadixSortSpan(sortKeys, keysWorkspace, r, keyMask);
+            }
+            using (new BasicTimer(Me() + " index recovery"))
+            {
+                for (int i = 0; i < data.Length; i++)
+                {
+                    index[i] = (int)(sortKeys[i] & ((1 << 24) - 1));
+                }
+            }
+            CheckData(data, index);
+        }
+
         static readonly DateTime Epoch = new DateTime(
             2005, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -489,7 +525,6 @@ namespace SortOfDemo
 
     static unsafe class Helpers
     {
-
         private static DateTime
                 Millenium = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                 MillenialMinValue = Millenium.AddSeconds(2),
@@ -526,6 +561,8 @@ namespace SortOfDemo
                 RadixSort(k, v, kw, vw, Math.Min(keys.Length, values.Length), r, keyMask);
             }
         }
+
+
         private static unsafe void RadixSort(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
             int len, int r, ulong keyMask)
         {
@@ -608,6 +645,78 @@ namespace SortOfDemo
             }
         }
 
+        public static unsafe void RadixSortSpan(Span<ulong> keys, Span<ulong> keysWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
+        {
+            if (keysWorkspace.Length > keys.Length) keysWorkspace = keysWorkspace.Slice(0, keys.Length);
+            else if (keysWorkspace.Length < keys.Length) throw new ArgumentException(nameof(keysWorkspace));
+
+            bool swapped = false;
+            // counting and prefix arrays
+            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
+            int CountLength = 1 << r, len = keys.Length;
+            int* count = stackalloc int[CountLength];
+            int* pref = stackalloc int[CountLength];
+
+            // number of groups 
+            int groups = GroupCount(r);
+
+            // the mask to identify groups 
+            ulong mask = (1UL << r) - 1;
+
+            // the algorithm: 
+            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            {
+                ulong groupMask = (keyMask >> shift) & mask;
+                keyMask &= ~(mask << shift); // remove those bits from the keyMask to allow fast exit
+                if (groupMask == 0)
+                {
+                    if (keyMask == 0) break;
+                    else continue;
+                }
+
+                // reset count array 
+                for (int j = 0; j < CountLength; j++)
+                    count[j] = 0;
+
+                // counting elements of the c-th group 
+                for (int i = 0; i < keys.Length; i++)
+                    count[(keys[i] >> shift) & groupMask]++;
+
+                // calculating prefixes 
+                pref[0] = 0;
+                for (int i = 1; i < CountLength; i++)
+                {
+                    int groupCount = count[i - 1];
+                    if (groupCount == len) goto NextLoop; // all in one group
+                    pref[i] = pref[i - 1] + groupCount;
+                }
+                if (count[CountLength - 1] == len) goto NextLoop; // all in one group
+
+                // from a[] to t[] elements ordered by c-th group 
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    int j = pref[(keys[i] >> shift) & groupMask]++;
+                    keysWorkspace[j] = keys[i];
+                }
+
+                // a[]=t[] and start again until the last group
+
+                // swap the pointers for the next iteration - so we use the "keys"
+                // as the "keysWorkspace" on the 2nd/4th/6th loops
+                Swap(ref keys, ref keysWorkspace);
+                swapped = !swapped;
+
+                NextLoop:
+                ;
+            }
+            // a is sorted
+
+            if (swapped)
+            {
+                CopyBlock(keysWorkspace, keys, len);
+            }
+        }
+
         private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r, ulong keyMask)
         {
             // number of bits in the keys
@@ -686,8 +795,7 @@ namespace SortOfDemo
 
         private class Worker
         {
-            public Memory<int> Counts { get; set; }
-            public Memory<int> Pref { get; set; }
+            public Memory<int> CountsOffsets { get; set; }
             public int Mask { get; set; }
             public Memory<ulong> Keys;
             public Memory<ulong> KeysWorkspace;
@@ -716,11 +824,11 @@ namespace SortOfDemo
                 var keysWorkspace = KeysWorkspace.Span;
                 var values = Values.Span;
                 var valuesWorkspace = ValuesWorkspace.Span;
-                var pref = Pref.Span;
+                var offsets = CountsOffsets.Span;
                 for (int i = 0; i < keys.Length; i++)
                 {
                     var grp = (int)(keys[i] >> shift) & mask;
-                    int j = pref[grp]++;
+                    int j = offsets[grp]++;
                     // Console.WriteLine($"grp {grp}, offset {j}, value: {keys[i]}");
                     keysWorkspace[j] = keys[i];
                     valuesWorkspace[j] = values[i];
@@ -733,13 +841,13 @@ namespace SortOfDemo
 
                 var mask = Mask;
                 var shift = Shift;
-                int* stackCount = stackalloc int[Counts.Length];
+                int* stackCount = stackalloc int[CountsOffsets.Length];
 
                 // count into a local buffer
                 for (int i = 0; i < keys.Length; i++)
                     stackCount[(int)(keys[i] >> shift) & mask]++;
 
-                var counts = Counts.Span;
+                var counts = CountsOffsets.Span;
                 for (int i = 0; i < counts.Length; i++)
                     counts[i] = stackCount[i];
             }
@@ -754,14 +862,14 @@ namespace SortOfDemo
             {
                 Mode = WorkerMode.Count;
                 Shift = shift;
-                var span = Counts.Span;
+                var span = CountsOffsets.Span;
                 for (int i = 0; i < span.Length; i++)
                     span[i] = 0;
             }
         }
 
         static readonly int WorkerCount = Environment.ProcessorCount;
-        public static int CountsWorkspaceSize(int r) => 2 * WorkerCount * CountLength(r);
+        public static int CountsWorkspaceSize(int r) => WorkerCount * CountLength(r);
 
         static int GroupCount(int r)
         {
@@ -800,8 +908,8 @@ namespace SortOfDemo
             {
                 var worker = new Worker
                 {
-                    Counts = countsWorkspace.Slice(i * countLength, countLength),
-                    Pref = countsWorkspace.Slice(countLength * workerCount + i * countLength, countLength),
+                    CountsOffsets = countsWorkspace.Slice(i * countLength, countLength),
+                    // Pref = countsWorkspace.Slice(countLength * workerCount + i * countLength, countLength),
                     Mask = mask,
                 };
                 workers[i] = worker;
@@ -839,9 +947,10 @@ namespace SortOfDemo
                     int countThisGroup = 0;
                     foreach (var worker in workers)
                     {
-                        var cnt = worker.Counts.Span[i];
+                        ref var el = ref worker.CountsOffsets.Span[i];
+                        var cnt = el;
                         // Console.WriteLine($"grp {i}, offset: {offset}");
-                        worker.Pref.Span[i] = offset;
+                        el = offset;
                         countThisGroup += cnt;
                         offset += cnt;
                     }
@@ -884,12 +993,23 @@ namespace SortOfDemo
             x = y;
             y = tmp;
         }
+        static void Swap<T>(ref Span<T> x, ref Span<T> y)
+        {
+            var tmp = x;
+            x = y;
+            y = tmp;
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void CopyBlock<T>(Memory<T> destination, Memory<T> source, int length) where T : struct
         {
+            CopyBlock(destination.Span, source.Span, length);
+        }
+        static void CopyBlock<T>(Span<T> destination, Span<T> source, int length) where T : struct
+        {
             Unsafe.CopyBlock(
-                ref destination.Span.NonPortableCast<T, byte>()[0],
-                ref source.Span.NonPortableCast<T, byte>()[0],                
+                ref destination.NonPortableCast<T, byte>()[0],
+                ref source.NonPortableCast<T, byte>()[0],
                 (uint)(Unsafe.SizeOf<T>() * length));
         }
 
