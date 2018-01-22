@@ -72,7 +72,7 @@ namespace SortOfDemo
             {
                 Console.WriteLine("data is unsorted, as intended");
             }
-            
+
             LINQ(data);
             ArraySortComparable(data);
             ArraySortComparer(data);
@@ -84,17 +84,28 @@ namespace SortOfDemo
             DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
             DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
             DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
+            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 10);
             DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 10);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
 #if !USE_TIME
             ArraySortCombinedIndex(data, index, sortKeys);
+
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
             RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
+
+            const ulong mask = (ulong.MaxValue) << 24;
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
+            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
 #endif
         }
 
@@ -335,7 +346,13 @@ namespace SortOfDemo
             CheckData(data, index);
         }
 
-        static void RadixSortCombinedIndex(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int r)
+        static int HammingWeight(ulong i)
+        {
+            i = i - ((i >> 1) & 0x5555555555555555UL);
+            i = (i & 0x3333333333333333UL) + ((i >> 2) & 0x3333333333333333UL);
+            return (int)(unchecked(((i + (i >> 4)) & 0xF0F0F0F0F0F0F0FUL) * 0x101010101010101UL) >> 56);
+        }
+        static void RadixSortCombinedIndex(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int r, ulong keyMask = ulong.MaxValue)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
@@ -344,9 +361,9 @@ namespace SortOfDemo
                     sortKeys[i] = CombinedKey(in data[i], i);
                 }
             }
-            using (new BasicTimer(Me() + " sort, r=" + r))
+            using (new BasicTimer(Me() + " sort, r=" + r + ", bits: " + HammingWeight(keyMask)))
             {
-                Helpers.RadixSort(sortKeys, keysWorkspace, r);
+                Helpers.RadixSort(sortKeys, keysWorkspace, r, keyMask);
             }
             using (new BasicTimer(Me() + " index recovery"))
             {
@@ -470,27 +487,29 @@ namespace SortOfDemo
             return (uint)(value - Millenium).TotalSeconds;
         }
 
-        public static void RadixSort(ulong[] keys,ulong[] keysWorkspace, int r = 4)
+        public static void RadixSort(ulong[] keys,ulong[] keysWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
         {
+            if (keyMask == 0) return;
             fixed (ulong* k = keys)
             fixed (ulong* kw = keysWorkspace)
             {
-                RadixSort(k, kw, keys.Length, r);
+                RadixSort(k, kw, keys.Length, r, keyMask);
             }
         }
 
-        public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
+        public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
         {
+            if (keyMask == 0) return;
             fixed (ulong* k = keys)
             fixed (int* v = values)
             fixed (ulong* kw = keysWorkspace)
             fixed (int* vw = valuesWorkspace)
             {
-                RadixSort(k, v, kw, vw, Math.Min(keys.Length, values.Length), r);
+                RadixSort(k, v, kw, vw, Math.Min(keys.Length, values.Length), r, keyMask);
             }
         }
         private static unsafe void RadixSort(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
-            int len, int r = 4)
+            int len, int r, ulong keyMask)
         {
             // number of bits in the keys
             const int b = sizeof(ulong) * 8;
@@ -511,23 +530,36 @@ namespace SortOfDemo
             // the algorithm: 
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
+                ulong groupMask = (keyMask >> shift) & mask;
+                keyMask &= ~(mask << shift); // remove those bits from the keyMask to allow fast exit
+                if (groupMask == 0)
+                {
+                    if (keyMask == 0) break;
+                    else continue;
+                }
+
                 // reset count array 
                 for (int j = 0; j < CountLength; j++)
                     count[j] = 0;
 
                 // counting elements of the c-th group 
                 for (int i = 0; i < len; i++)
-                    count[(keys[i] >> shift) & mask]++;
+                    count[(keys[i] >> shift) & groupMask]++;
 
                 // calculating prefixes 
                 pref[0] = 0;
                 for (int i = 1; i < CountLength; i++)
-                    pref[i] = pref[i - 1] + count[i - 1];
+                {
+                    int groupCount = count[i - 1];
+                    if (groupCount == len) goto NextLoop; // all in one group
+                    pref[i] = pref[i - 1] + groupCount;
+                }
+                if (count[CountLength - 1] == len) goto NextLoop; // all in one group
 
                 // from a[] to t[] elements ordered by c-th group 
                 for (int i = 0; i < len; i++)
                 {
-                    int j = pref[(keys[i] >> shift) & mask]++;
+                    int j = pref[(keys[i] >> shift) & groupMask]++;
                     keysWorkspace[j] = keys[i];
                     valuesWorkspace[j] = values[i];
                 }
@@ -545,6 +577,9 @@ namespace SortOfDemo
                 valuesWorkspace = tmp1;
 
                 swapped = !swapped;
+
+NextLoop:
+                ;
             }
             // a is sorted
 
@@ -555,92 +590,7 @@ namespace SortOfDemo
             }
         }
 
-        private static unsafe void RadixSortVectorized(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
-    int len, int r = 4)
-        {
-            // number of bits in the keys
-            const int b = sizeof(ulong) * 8;
-
-            bool swapped = false;
-            // counting and prefix arrays
-            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
-            int CountLength = 1 << r;
-            int* count = stackalloc int[CountLength];
-            int* pref = stackalloc int[CountLength];
-
-            // number of groups 
-            int groups = (int)Math.Ceiling(b / (double)r);
-
-            // the mask to identify groups 
-            ulong mask = (1UL << r) - 1;
-
-            //int vectorizedLength = len / Vector<ulong>.Count;
-            //var maskVector = new Vector<ulong>(mask);
-
-            //int* vectorCounts = stackalloc int[len];
-            // the algorithm: 
-            for (int c = 0, shift = 0; c < groups; c++, shift += r)
-            {
-                // reset count array 
-                for (int j = 0; j < CountLength; j++)
-                    count[j] = 0;
-
-                // counting elements of the c-th group
-                ulong* ptr = keys;
-                for (int i = 0; i < len; i++)
-                {
-                    // todo: simplify to one expression
-                    
-                    var x = Unsafe.Read<Vector256<ulong>>(ptr);
-                    Avx2.ShiftRightLogical(x, (byte)shift);
-                    //Vector<ulong> x = Unsafe.Read<ulong>(ptr) >> shift;
-                    //Vector<ulong> v = Vector.BitwiseAnd(x, maskVector);
-
-                    //ptr += vectorizedLength;
-                    //Unsafe.Write<Vector<ulong>>(vectorCounts, v);
-                    //for(int j = 0; j < Vector<ulong>.Count; j++)
-                    //{
-                    //    count[vectorCounts[j]]++;
-                    //}
-                }
-
-                // calculating prefixes 
-                pref[0] = 0;
-                for (int i = 1; i < CountLength; i++)
-                    pref[i] = pref[i - 1] + count[i - 1];
-
-                // from a[] to t[] elements ordered by c-th group 
-                for (int i = 0; i < len; i++)
-                {
-                    int j = pref[(keys[i] >> shift) & mask]++;
-                    keysWorkspace[j] = keys[i];
-                    valuesWorkspace[j] = values[i];
-                }
-
-                // a[]=t[] and start again until the last group
-
-                // swap the pointers for the next iteration - so we use the "keys"
-                // as the "keysWorkspace" on the 2nd/4th/6th loops
-                var tmp0 = keys;
-                keys = keysWorkspace;
-                keysWorkspace = tmp0;
-
-                var tmp1 = values;
-                values = valuesWorkspace;
-                valuesWorkspace = tmp1;
-
-                swapped = !swapped;
-            }
-            // a is sorted
-
-            if (swapped)
-            {
-                Unsafe.CopyBlock(keysWorkspace, keys, (uint)(len * sizeof(ulong)));
-                Unsafe.CopyBlock(valuesWorkspace, values, (uint)(len * sizeof(int)));
-            }
-        }
-
-        private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r = 4)
+        private static unsafe void RadixSort(ulong* keys, ulong* keysWorkspace, int len, int r, ulong keyMask)
         {
             // number of bits in the keys
             const int b = sizeof(ulong) * 8;
@@ -661,23 +611,36 @@ namespace SortOfDemo
             // the algorithm: 
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
+                ulong groupMask = (keyMask >> shift) & mask;
+                keyMask &= ~(mask << shift); // remove those bits from the keyMask to allow fast exit
+                if (groupMask == 0)
+                {
+                    if (keyMask == 0) break;
+                    else continue;
+                }
+
                 // reset count array 
                 for (int j = 0; j < CountLength; j++)
                     count[j] = 0;
 
                 // counting elements of the c-th group 
                 for (int i = 0; i < len; i++)
-                    count[(keys[i] >> shift) & mask]++;
+                    count[(keys[i] >> shift) & groupMask]++;
 
                 // calculating prefixes 
                 pref[0] = 0;
                 for (int i = 1; i < CountLength; i++)
-                    pref[i] = pref[i - 1] + count[i - 1];
+                {
+                    int groupCount = count[i - 1];
+                    if (groupCount == len) goto NextLoop; // all in one group
+                    pref[i] = pref[i - 1] + groupCount;
+                }
+                if (count[CountLength - 1] == len) goto NextLoop; // all in one group
 
                 // from a[] to t[] elements ordered by c-th group 
                 for (int i = 0; i < len; i++)
                 {
-                    int j = pref[(keys[i] >> shift) & mask]++;
+                    int j = pref[(keys[i] >> shift) & groupMask]++;
                     keysWorkspace[j] = keys[i];
                 }
 
@@ -690,6 +653,9 @@ namespace SortOfDemo
                 keysWorkspace = tmp0;
 
                 swapped = !swapped;
+
+NextLoop:
+                ;
             }
             // a is sorted
 
