@@ -5,8 +5,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 using System.Threading.Tasks;
 
 namespace SortOfDemo
@@ -52,7 +50,7 @@ namespace SortOfDemo
             SomeType[] data;
             DateTime[] releaseDates;
             ulong[] sortKeys, keysWorkspace;
-            int[] index, valuesWorkspace;
+            int[] index, valuesWorkspace, countsWorkspace;
             using (new BasicTimer("allocating"))
             {
                 data = new SomeType[16 * 1024 * 1024];
@@ -61,51 +59,71 @@ namespace SortOfDemo
                 keysWorkspace = new ulong[data.Length];
                 index = new int[data.Length];
                 valuesWorkspace = new int[data.Length];
+                countsWorkspace = new int[Helpers.CountsWorkspaceSize(16)];
             }
 
             Populate(data);
-            try
-            {
-                CheckData(data);
-            }
-            catch (InvalidOperationException)
-            {
-                Console.WriteLine("data is unsorted, as intended");
-            }
+            //try
+            //{
+            //    CheckData(data);
+            //}
+            //catch (InvalidOperationException)
+            //{
+            //    Console.WriteLine("data is unsorted, as intended");
+            //}
 
-            LINQ(data);
-            ArraySortComparable(data);
-            ArraySortComparer(data);
-            ArraySortComparison(data);
-            DualArrayDates(data, releaseDates);
-            DualArrayComposite(data, sortKeys);
-            DualArrayIndexed(data, index, sortKeys);
-            DualArrayIndexedIntroSort(data, index, sortKeys);
-            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
-            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
-            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
-            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 10);
-            DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 10);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
+            //List<int> old = Enumerable.Range(0, 17).ToList();
+            //List<ulong> x = new List<ulong>();
+            //Random r = new Random(123);
+            //while (old.Count != 0)
+            //{
+            //    var idx = r.Next(old.Count);
+            //    x.Add((ulong)old[idx]);
+            //    old.RemoveAt(idx);
+            //}
+            //var xKeys = x.ToArray();
+            //var xVals = Enumerable.Range(0, xKeys.Length).ToArray();
+
+            //Helpers.RadixSortParallel(xKeys, xVals, keysWorkspace, valuesWorkspace, countsWorkspace, 2);
+            //foreach(var key in xKeys)
+            //{
+            //    Console.WriteLine(key);
+            //}
+
+
+            //LINQ(data);
+            //ArraySortComparable(data);
+            //ArraySortComparer(data);
+            //ArraySortComparison(data);
+            //DualArrayDates(data, releaseDates);
+            //DualArrayComposite(data, sortKeys);
+            //DualArrayIndexed(data, index, sortKeys);
+            //DualArrayIndexedIntroSort(data, index, sortKeys);
+            //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 2);
+            //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 4);
+            //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
+            //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 10);
+            //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 2);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 4);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 8);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 10);
+            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 16);
 #if !USE_TIME
-            ArraySortCombinedIndex(data, index, sortKeys);
+            //ArraySortCombinedIndex(data, index, sortKeys);
 
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
 
-            const ulong mask = (ulong.MaxValue) << 24;
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
+            //const ulong mask = (ulong.MaxValue) << 24;
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
+            //RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
 #endif
         }
 
@@ -287,7 +305,7 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
-        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
+        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int[] countsWorkspace, int r = 4)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
@@ -299,7 +317,7 @@ namespace SortOfDemo
             }
             using (new BasicTimer(Me() + " sort, r=" + r))
             {
-                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace, r);
+                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace, countsWorkspace, r);
             }
             CheckData(data, index, asFloat: true);
             // no need to re-invent
@@ -487,7 +505,7 @@ namespace SortOfDemo
             return (uint)(value - Millenium).TotalSeconds;
         }
 
-        public static void RadixSort(ulong[] keys,ulong[] keysWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
+        public static void RadixSort(ulong[] keys, ulong[] keysWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
         {
             if (keyMask == 0) return;
             fixed (ulong* k = keys)
@@ -578,7 +596,7 @@ namespace SortOfDemo
 
                 swapped = !swapped;
 
-NextLoop:
+                NextLoop:
                 ;
             }
             // a is sorted
@@ -654,7 +672,7 @@ NextLoop:
 
                 swapped = !swapped;
 
-NextLoop:
+                NextLoop:
                 ;
             }
             // a is sorted
@@ -666,151 +684,215 @@ NextLoop:
         }
 
 
-        unsafe class Worker
+        private class Worker
         {
-            public int* Counts { get; set; }
-            public int CountLength { get; set; }
-            public ulong Mask { get; set; }
-            public ulong* Keys { get; set; }
-            public int Length { get; set; }
-            public int Offset { get; set; }
+            public Memory<int> Counts { get; set; }
+            public Memory<int> Pref { get; set; }
+            public int Mask { get; set; }
+            public Memory<ulong> Keys;
+            public Memory<ulong> KeysWorkspace;
+            public Memory<int> Values;
+            public Memory<int> ValuesWorkspace;
             public int Shift { get; set; }
-            public object SyncLock { get; set; }
             public void Invoke()
             {
-                var len = Length;
-                var mask = Mask;
-                var keys = Keys + Offset;
-                var shift = Shift;
-                int* count = stackalloc int[CountLength];
-
-                // count into a local buffer
-                for (int i = 0; i < len; i++)
-                    count[(*keys++ >> shift) & mask]++;
-
-                // now update the origin data, synchronized
-                lock (SyncLock)
+                switch (Mode)
                 {
-                    for (int i = 0; i < CountLength; i++)
-                        Counts[i] += count[i];
+                    case WorkerMode.Count:
+                        Count();
+                        Mode = WorkerMode.Apply;
+                        break;
+                    case WorkerMode.Apply:
+                        Apply();
+                        Mode = WorkerMode.Complete;
+                        break;
                 }
             }
-        }
-
-        public static void RadixSortParallel(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4)
-        {
-            fixed (ulong* k = keys)
-            fixed (int* v = values)
-            fixed (ulong* kw = keysWorkspace)
-            fixed (int* vw = valuesWorkspace)
+            private void Apply()
             {
-                RadixSortParallel(k, v, kw, vw, Math.Min(keys.Length, values.Length), r);
+                var shift = Shift;
+                var mask = Mask;
+                var keys = Keys.Span;
+                var keysWorkspace = KeysWorkspace.Span;
+                var values = Values.Span;
+                var valuesWorkspace = ValuesWorkspace.Span;
+                var pref = Pref.Span;
+                for (int i = 0; i < keys.Length; i++)
+                {
+                    var grp = (int)(keys[i] >> shift) & mask;
+                    int j = pref[grp]++;
+                    // Console.WriteLine($"grp {grp}, offset {j}, value: {keys[i]}");
+                    keysWorkspace[j] = keys[i];
+                    valuesWorkspace[j] = values[i];
+                }
+            }
+            private void Count()
+            {
+                var keys = Keys.Span;
+                if (keys.IsEmpty) return;
+
+                var mask = Mask;
+                var shift = Shift;
+                int* stackCount = stackalloc int[Counts.Length];
+
+                // count into a local buffer
+                for (int i = 0; i < keys.Length; i++)
+                    stackCount[(int)(keys[i] >> shift) & mask]++;
+
+                var counts = Counts.Span;
+                for (int i = 0; i < counts.Length; i++)
+                    counts[i] = stackCount[i];
+            }
+            enum WorkerMode
+            {
+                Count,
+                Apply,
+                Complete,
+            }
+            WorkerMode Mode { get; set; }
+            internal void PrepareForCount(int shift)
+            {
+                Mode = WorkerMode.Count;
+                Shift = shift;
+                var span = Counts.Span;
+                for (int i = 0; i < span.Length; i++)
+                    span[i] = 0;
             }
         }
-        private static unsafe void RadixSortParallel(ulong* keys, int* values, ulong* keysWorkspace, int* valuesWorkspace,
-    int len, int r = 4)
-        {
-            // number of bits our group will be long 
 
+        static readonly int WorkerCount = Environment.ProcessorCount;
+        public static int CountsWorkspaceSize(int r) => 2 * WorkerCount * CountLength(r);
+
+        static int GroupCount(int r)
+        {
             // number of bits in the keys
             const int b = sizeof(ulong) * 8;
-
-            // counting and prefix arrays
-            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
-            int CountLength = 1 << r;
-            int* count = stackalloc int[CountLength];
-            int* pref = stackalloc int[CountLength];
 
             // number of groups 
             int groups = (int)Math.Ceiling(b / (double)r);
 
+            return groups;
+        }
+        static int CountLength(int r) => 1 << r;
+        public static void RadixSortParallel(Memory<ulong> keys, Memory<int> values,
+            Memory<ulong> keysWorkspace, Memory<int> valuesWorkspace,
+            Memory<int> countsWorkspace, int r = 4)
+        {
+            int len = keys.Length, workerCount = WorkerCount;
+
+            // number of bits our group will be long 
+
+
+            // counting and prefix arrays
+            // (note dimensions 2^r which is the number of all possible values of a r-bit number) 
+            int countLength = CountLength(r);
+
             // the mask to identify groups 
-            ulong mask = (1UL << r) - 1;
+            int mask = (1 << r) - 1;
 
             // configure our workers
-            int workerCount = Environment.ProcessorCount * 2;
             int blockSize = len / workerCount;
             if ((len % workerCount) != 0) blockSize++;
 
             var workers = new Worker[workerCount];
             var workerInvoke = new Action[workerCount];
-            int remaining = len;
-            object syncLock = null;
-            int offset = 0;
             for (int i = 0; i < workerCount; i++)
             {
-                var lenThisBlock = Math.Min(blockSize, remaining);
-                remaining -= lenThisBlock;
                 var worker = new Worker
                 {
-                    Counts = count,
-                    CountLength = CountLength,
-                    Length = lenThisBlock,
+                    Counts = countsWorkspace.Slice(i * countLength, countLength),
+                    Pref = countsWorkspace.Slice(countLength * workerCount + i * countLength, countLength),
                     Mask = mask,
-                    Offset = offset
                 };
-                offset += lenThisBlock;
-                if (i == 0) syncLock = worker; // use the first worker as the lock
-                worker.SyncLock = syncLock;
                 workers[i] = worker;
                 workerInvoke[i] = worker.Invoke;
             }
-            Debug.Assert(remaining == 0, "Failed to calculate block sizes correctly");
 
             // the algorithm:
             bool swapped = false;
+            int groups = GroupCount(r);
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
-                // reset count array 
-                for (int j = 0; j < CountLength; j++)
-                    count[j] = 0;
-
                 // set the shift on the workers
+                int remaining = len, offset = 0;
                 foreach (var worker in workers)
                 {
-                    worker.Shift = shift;
-                    worker.Keys = keys;
+                    var lenThisBlock = Math.Min(blockSize, remaining);
+                    remaining -= lenThisBlock;
+
+                    worker.PrepareForCount(shift);
+                    worker.Keys = keys.Slice(offset, lenThisBlock);
+                    worker.KeysWorkspace = keysWorkspace;
+                    worker.Values = values.Slice(offset, lenThisBlock);
+                    worker.ValuesWorkspace = valuesWorkspace;
+                    offset += lenThisBlock;
                 }
+                Debug.Assert(remaining == 0, "Failed to calculate block sizes correctly");
 
                 // counting elements of the c-th group
                 Parallel.Invoke(workerInvoke);
 
-                // calculating prefixes 
-                pref[0] = 0;
-                for (int i = 1; i < CountLength; i++)
-                    pref[i] = pref[i - 1] + count[i - 1];
-
-                // from a[] to t[] elements ordered by c-th group 
-                for (int i = 0; i < len; i++)
+                // calculating prefixes
+                offset = 0;
+                for (int i = 0; i < countLength; i++)
                 {
-                    int j = pref[(keys[i] >> shift) & mask]++;
-                    keysWorkspace[j] = keys[i];
-                    valuesWorkspace[j] = values[i];
+                    int countThisGroup = 0;
+                    foreach (var worker in workers)
+                    {
+                        var cnt = worker.Counts.Span[i];
+                        // Console.WriteLine($"grp {i}, offset: {offset}");
+                        worker.Pref.Span[i] = offset;
+                        countThisGroup += cnt;
+                        offset += cnt;
+                    }
+                    if (countThisGroup == len) goto NextGroup; // all in one group
                 }
+                //Console.WriteLine();
+                // from a[] to t[] elements ordered by c-th group 
+                Parallel.Invoke(workerInvoke);
+                //Console.WriteLine();
+
+                //var span = swapped ? keysWorkspace.Span : keys.Span;
+                //for (int i = 0; i < span.Length;i++)
+                //    Console.WriteLine(span[i]);
 
                 // a[]=t[] and start again until the last group
 
                 // swap the pointers for the next iteration - so we use the "keys"
                 // as the "keysWorkspace" on the 2nd/4th/6th loops
-                var tmp0 = keys;
-                keys = keysWorkspace;
-                keysWorkspace = tmp0;
 
-                var tmp1 = values;
-                values = valuesWorkspace;
-                valuesWorkspace = tmp1;
+                Swap(ref keys, ref keysWorkspace);
+                Swap(ref values, ref valuesWorkspace);
 
                 swapped = !swapped;
+
+                NextGroup:;
             }
             // a is sorted 
 
             if (swapped)
             {
-                Unsafe.CopyBlock(keysWorkspace, keys, (uint)(len * sizeof(ulong)));
-                Unsafe.CopyBlock(valuesWorkspace, values, (uint)(len * sizeof(int)));
+                Console.WriteLine("Swapping");
+                CopyBlock(keysWorkspace, keys, len);
+                CopyBlock(valuesWorkspace, values, len);
             }
         }
-        
+
+        static void Swap<T>(ref T x, ref T y)
+        {
+            var tmp = x;
+            x = y;
+            y = tmp;
+        }
+
+        static void CopyBlock<T>(Memory<T> destination, Memory<T> source, int length) where T : struct
+        {
+            Unsafe.CopyBlock(
+                ref destination.Span.NonPortableCast<T, byte>()[0],
+                ref source.Span.NonPortableCast<T, byte>()[0],                
+                (uint)(Unsafe.SizeOf<T>() * length));
+        }
+
         // borrowed from core-clr, with massive special-casing
         // https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/mscorlib/src/System/Array.cs
         internal static void Sort(ulong* keys, int* values, int count)
