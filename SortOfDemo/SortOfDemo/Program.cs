@@ -5,7 +5,10 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using System.Threading.Tasks;
 
 namespace SortOfDemo
@@ -43,35 +46,47 @@ namespace SortOfDemo
         static void Execute()
         {
             Console.WriteLine($"Processor count: {Environment.ProcessorCount}");
+            Console.WriteLine("Supported instruction sets:");
+            foreach(var instructionSet in
+                from type in typeof(Avx).Assembly.GetTypes()
+                where type.Namespace == "System.Runtime.Intrinsics.X86"
+                let isSupported = type.GetProperty("IsSupported", BindingFlags.Static | BindingFlags.Public)
+                where isSupported != null
+                orderby type.Name
+                select (type.Name, isSupported))
+            {
+                Console.WriteLine($"{instructionSet.Name}: {instructionSet.isSupported.GetValue(null)}");
+            }
+
 #if USE_TIME
             Console.WriteLine($"Release date is to the second; some tests disabled");
 #else
             Console.WriteLine($"Release date is to the day; all tests enabled (but less resolution on date)");
 #endif
-            SomeType[] data;
-            DateTime[] releaseDates;
-            ulong[] sortKeys, keysWorkspace;
-            int[] index, valuesWorkspace, countsWorkspace;
-            using (new BasicTimer("allocating"))
-            {
-                data = new SomeType[16 * 1024 * 1024];
-                releaseDates = new DateTime[data.Length];
-                sortKeys = new ulong[data.Length];
-                keysWorkspace = new ulong[data.Length];
-                index = new int[data.Length];
-                valuesWorkspace = new int[data.Length];
-                countsWorkspace = new int[Helpers.CountsWorkspaceSize(16)];
-            }
+            //SomeType[] data;
+            //DateTime[] releaseDates;
+            //ulong[] sortKeys, keysWorkspace;
+            //int[] index, valuesWorkspace, countsWorkspace;
+            //using (new BasicTimer("allocating"))
+            //{
+            //    data = new SomeType[16 * 1024 * 1024];
+            //    releaseDates = new DateTime[data.Length];
+            //    sortKeys = new ulong[data.Length];
+            //    keysWorkspace = new ulong[data.Length];
+            //    index = new int[data.Length];
+            //    valuesWorkspace = new int[data.Length];
+            //    countsWorkspace = new int[Helpers.CountsWorkspaceSize(16)];
+            //}
 
-            Populate(data);
-            try
-            {
-                CheckData(data);
-            }
-            catch (InvalidOperationException)
-            {
-                Console.WriteLine("data is unsorted, as intended");
-            }
+            //Populate(data);
+            //try
+            //{
+            //    CheckData(data);
+            //}
+            //catch (InvalidOperationException)
+            //{
+            //    Console.WriteLine("data is unsorted, as intended");
+            //}
 
             //LINQ(data);
             //ArraySortComparable(data);
@@ -86,40 +101,52 @@ namespace SortOfDemo
             //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 8);
             //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 10);
             //DualArrayIndexedRadixSort(data, index, sortKeys, keysWorkspace, valuesWorkspace, 16);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 2);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 4);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 8);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 10);
-            DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 16);
-//#if !USE_TIME
-//            ArraySortCombinedIndex(data, index, sortKeys);
-
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
-
-//            const ulong mask = (ulong.MaxValue) << 24;
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
-//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
 
 
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16);
 
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2, mask);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4, mask);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8, mask);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10, mask);
-//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16, mask);
-//#endif
+            //DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 2);
+            //DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 4);
+            //DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 8);
+            //DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 10);
+            //DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 16);
+            //if (Avx2.IsSupported)
+            //{
+            //    DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 2, avx: true);
+            //    DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 4, avx: true);
+            //    DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 8, avx: true);
+            //    DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 10, avx: true);
+            //    DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 16, avx: true);
+            //}
+            
+            //#if !USE_TIME
+            //            ArraySortCombinedIndex(data, index, sortKeys);
+
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
+
+            //            const ulong mask = (ulong.MaxValue) << 24;
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
+            //            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
+
+
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16);
+
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2, mask);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4, mask);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8, mask);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10, mask);
+            //            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16, mask);
+            //#endif
         }
 
 
@@ -339,7 +366,7 @@ namespace SortOfDemo
                 return false;
             }
         }
-        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int[] countsWorkspace, int r = 4)
+        private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int[] countsWorkspace, int r = 4, bool avx = false)
         {
             using (new BasicTimer(Me() + " prepare"))
             {
@@ -349,9 +376,9 @@ namespace SortOfDemo
                     sortKeys[i] = Sortable(in data[i]);
                 }
             }
-            using (new BasicTimer(Me() + " sort, r=" + r))
+            using (new BasicTimer(Me() + " sort, r=" + r + ", avx: " + avx))
             {
-                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace, countsWorkspace, r);
+                Helpers.RadixSortParallel(sortKeys, index, keysWorkspace, valuesWorkspace, countsWorkspace, r, avx);
             }
             CheckData(data, index, asFloat: true);
             // no need to re-invent
@@ -830,6 +857,9 @@ namespace SortOfDemo
                     case WorkerMode.Count:
                         Mode = Count();
                         break;
+                    case WorkerMode.CountAvx:
+                        Mode = CountAvx();
+                        break;
                     case WorkerMode.ApplySort:
                         ApplySort();
                         Mode = WorkerMode.Complete;
@@ -892,18 +922,72 @@ namespace SortOfDemo
                 }
                 return SingleGroupIndex < 0 ? WorkerMode.ApplySort : WorkerMode.ApplyBlock;
             }
+
+            static unsafe Vector256<ulong> LoadVector256(ulong value)
+            {
+                var ptr = stackalloc ulong[4];
+                for (int i = 0; i < 4; i++)
+                    ptr[i] = value;
+                return Unsafe.Read<Vector256<ulong>>(ptr);
+            }
+
+            private unsafe WorkerMode CountAvx() // retuns true if already sorted
+            {
+                var keys = Keys.Span;
+                var counts = CountsOffsets.Span;
+
+                for (int i = 0; i < counts.Length; i++)
+                    counts[i] = 0;
+                if (keys.IsEmpty)
+                {
+                    return WorkerMode.Complete;
+                }
+
+                var mask = Mask;
+                var maskVector= LoadVector256((ulong)Mask);
+                var shift = (byte)Shift;
+
+                // count into a local buffer - avoid some range checking
+
+                var chunks = keys.Length / 4;
+                var chunked = keys.NonPortableCast<ulong,Vector256<ulong>>();
+                for (int i = 0; i < chunked.Length; i++)
+                {
+                    var vec = Avx2.And(Avx2.ShiftRightLogical(chunked[i], shift), maskVector);
+                    var ptr= (ulong*)Unsafe.AsPointer(ref vec);
+                    counts[(int)*ptr++]++;
+                    counts[(int)*ptr++]++;
+                    counts[(int)*ptr++]++;
+                    counts[(int)*ptr++]++;
+                }
+                for(int i = chunked.Length << 2; i < keys.Length; i++)
+                {
+                    counts[(int)(keys[i] >> shift) & mask]++;
+                }
+
+                SingleGroupIndex = -1;
+                var len = keys.Length;
+                for (int i = 0; i < counts.Length; i++)
+                {
+                    var grpCount = counts[i];
+                    if (grpCount == len) SingleGroupIndex = i; // single group detected
+                    counts[i] = grpCount;
+                }
+                return SingleGroupIndex < 0 ? WorkerMode.ApplySort : WorkerMode.ApplyBlock;
+            }
             private int SingleGroupIndex { get; set; }
             enum WorkerMode
             {
                 Count,
+                CountAvx,
                 ApplySort,
                 ApplyBlock,
                 Complete,
             }
             WorkerMode Mode { get; set; }
-            internal void PrepareForCount(int shift)
+            internal void PrepareForCount(int shift, bool avx)
             {
-                Mode = WorkerMode.Count;
+                Mode = avx ? WorkerMode.CountAvx : WorkerMode.Count;
                 Shift = shift;
                 var span = CountsOffsets.Span;
                 for (int i = 0; i < span.Length; i++)
@@ -927,7 +1011,7 @@ namespace SortOfDemo
         static int CountLength(int r) => 1 << r;
         public static void RadixSortParallel(Memory<ulong> keys, Memory<int> values,
             Memory<ulong> keysWorkspace, Memory<int> valuesWorkspace,
-            Memory<int> countsWorkspace, int r = 4)
+            Memory<int> countsWorkspace, int r = 4, bool avx = false)
         {
             int len = keys.Length, workerCount = WorkerCount;
 
@@ -970,7 +1054,7 @@ namespace SortOfDemo
                     var lenThisBlock = Math.Min(blockSize, remaining);
                     remaining -= lenThisBlock;
 
-                    worker.PrepareForCount(shift);
+                    worker.PrepareForCount(shift, avx);
                     worker.Keys = keys.Slice(offset, lenThisBlock);
                     worker.KeysWorkspace = keysWorkspace;
                     worker.Values = values.Slice(offset, lenThisBlock);

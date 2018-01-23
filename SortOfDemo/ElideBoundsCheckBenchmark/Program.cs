@@ -225,7 +225,7 @@ namespace ElideBoundsCheckBenchmark
 
 
         [Benchmark(Description = "array [0,len)", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public int ArrayRandomFull()
         {
             int xor = 0;
@@ -240,7 +240,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "array [lower,upper)", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public int ArrayRandomPartial()
         {
             int xor = 0;
@@ -256,7 +256,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "fixed [0,len), index", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public unsafe int FixedRandomFullByIndex()
         {
             int xor = 0;
@@ -274,7 +274,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "fixed [lower,upper), index", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public unsafe int FixedRandomPartialByIndex()
         {
             int xor = 0;
@@ -292,7 +292,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "fixed [0,len), incr", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public unsafe int FixedRandomFullByIncr()
         {
             int xor = 0;
@@ -311,7 +311,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "fixed [lower,upper), incr", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public unsafe int FixedRandomPartialByIncr()
         {
             int xor = 0;
@@ -331,7 +331,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "span [0,len)", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public int SpanRandomFull()
         {
             int xor = 0;
@@ -346,7 +346,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "span [lower,upper)", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public int SpanRandomPartial()
         {
             int xor = 0;
@@ -362,7 +362,7 @@ namespace ElideBoundsCheckBenchmark
         }
 
         [Benchmark(Description = "span slice", OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("random")]
+        [BenchmarkCategory("indexed")]
         public int SpanRandomSliced()
         {
             int xor = 0;
