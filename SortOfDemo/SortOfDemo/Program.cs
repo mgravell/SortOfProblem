@@ -63,33 +63,14 @@ namespace SortOfDemo
             }
 
             Populate(data);
-            //try
-            //{
-            //    CheckData(data);
-            //}
-            //catch (InvalidOperationException)
-            //{
-            //    Console.WriteLine("data is unsorted, as intended");
-            //}
-
-            //List<int> old = Enumerable.Range(0, 17).ToList();
-            //List<ulong> x = new List<ulong>();
-            //Random r = new Random(123);
-            //while (old.Count != 0)
-            //{
-            //    var idx = r.Next(old.Count);
-            //    x.Add((ulong)old[idx]);
-            //    old.RemoveAt(idx);
-            //}
-            //var xKeys = x.ToArray();
-            //var xVals = Enumerable.Range(0, xKeys.Length).ToArray();
-
-            //Helpers.RadixSortParallel(xKeys, xVals, keysWorkspace, valuesWorkspace, countsWorkspace, 2);
-            //foreach(var key in xKeys)
-            //{
-            //    Console.WriteLine(key);
-            //}
-
+            try
+            {
+                CheckData(data);
+            }
+            catch (InvalidOperationException)
+            {
+                Console.WriteLine("data is unsorted, as intended");
+            }
 
             //LINQ(data);
             //ArraySortComparable(data);
@@ -523,7 +504,7 @@ namespace SortOfDemo
         }
     }
 
-    static unsafe class Helpers
+    static class Helpers
     {
         private static DateTime
                 Millenium = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc),
@@ -540,7 +521,7 @@ namespace SortOfDemo
             return (uint)(value - Millenium).TotalSeconds;
         }
 
-        public static void RadixSort(ulong[] keys, ulong[] keysWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
+        public static unsafe void RadixSort(ulong[] keys, ulong[] keysWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
         {
             if (keyMask == 0) return;
             fixed (ulong* k = keys)
@@ -550,7 +531,7 @@ namespace SortOfDemo
             }
         }
 
-        public static void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
+        public static unsafe void RadixSort(ulong[] keys, int[] values, ulong[] keysWorkspace, int[] valuesWorkspace, int r = 4, ulong keyMask = ulong.MaxValue)
         {
             if (keyMask == 0) return;
             fixed (ulong* k = keys)
@@ -797,26 +778,29 @@ namespace SortOfDemo
         {
             public Memory<int> CountsOffsets { get; set; }
             public int Mask { get; set; }
-            public Memory<ulong> Keys;
-            public Memory<ulong> KeysWorkspace;
-            public Memory<int> Values;
-            public Memory<int> ValuesWorkspace;
+            public Memory<ulong> Keys { get; set; }
+            public Memory<ulong> KeysWorkspace { get; set; }
+            public Memory<int> Values { get; set; }
+            public Memory<int> ValuesWorkspace { get; set; }
             public int Shift { get; set; }
             public void Invoke()
             {
                 switch (Mode)
                 {
                     case WorkerMode.Count:
-                        Count();
-                        Mode = WorkerMode.Apply;
+                        Mode = Count();
                         break;
-                    case WorkerMode.Apply:
-                        Apply();
+                    case WorkerMode.ApplySort:
+                        ApplySort();
+                        Mode = WorkerMode.Complete;
+                        break;
+                    case WorkerMode.ApplyBlock:
+                        ApplyBlock();
                         Mode = WorkerMode.Complete;
                         break;
                 }
             }
-            private void Apply()
+            private void ApplySort()
             {
                 var shift = Shift;
                 var mask = Mask;
@@ -827,34 +811,55 @@ namespace SortOfDemo
                 var offsets = CountsOffsets.Span;
                 for (int i = 0; i < keys.Length; i++)
                 {
-                    var grp = (int)(keys[i] >> shift) & mask;
-                    int j = offsets[grp]++;
-                    // Console.WriteLine($"grp {grp}, offset {j}, value: {keys[i]}");
+                    int j = offsets[(int)(keys[i] >> shift) & mask]++;
                     keysWorkspace[j] = keys[i];
                     valuesWorkspace[j] = values[i];
                 }
             }
-            private void Count()
+            private void ApplyBlock()
+            {
+                // all we need to do is copy the data to a new offset
+                var offset = CountsOffsets.Span[SingleGroupIndex];
+                CopyBlock(KeysWorkspace.Span.Slice(offset), Keys.Span);
+                CopyBlock(ValuesWorkspace.Span.Slice(offset), Values.Span);
+            }
+            private unsafe WorkerMode Count() // retuns true if already sorted
             {
                 var keys = Keys.Span;
-                if (keys.IsEmpty) return;
+                var counts = CountsOffsets.Span;
+                if (keys.IsEmpty)
+                {
+                    // still need to wipe counts, so garbage doesn't
+                    // get aggregated
+                    for (int i = 0; i < counts.Length; i++)
+                        counts[i] = 0;
+                    return WorkerMode.Complete;
+                }
 
                 var mask = Mask;
                 var shift = Shift;
                 int* stackCount = stackalloc int[CountsOffsets.Length];
 
-                // count into a local buffer
+                // count into a local buffer - avoid some range checking
                 for (int i = 0; i < keys.Length; i++)
                     stackCount[(int)(keys[i] >> shift) & mask]++;
 
-                var counts = CountsOffsets.Span;
+                SingleGroupIndex = -1;
+                var len = keys.Length;
                 for (int i = 0; i < counts.Length; i++)
-                    counts[i] = stackCount[i];
+                {
+                    var grpCount = stackCount[i];
+                    if(grpCount == len) SingleGroupIndex = i; // single group detected
+                    counts[i] = grpCount;
+                }
+                return SingleGroupIndex < 0 ? WorkerMode.ApplySort : WorkerMode.ApplyBlock;
             }
+            private int SingleGroupIndex { get; set; }
             enum WorkerMode
             {
                 Count,
-                Apply,
+                ApplySort,
+                ApplyBlock,
                 Complete,
             }
             WorkerMode Mode { get; set; }
@@ -909,7 +914,6 @@ namespace SortOfDemo
                 var worker = new Worker
                 {
                     CountsOffsets = countsWorkspace.Slice(i * countLength, countLength),
-                    // Pref = countsWorkspace.Slice(countLength * workerCount + i * countLength, countLength),
                     Mask = mask,
                 };
                 workers[i] = worker;
@@ -949,27 +953,19 @@ namespace SortOfDemo
                     {
                         ref var el = ref worker.CountsOffsets.Span[i];
                         var cnt = el;
-                        // Console.WriteLine($"grp {i}, offset: {offset}");
                         el = offset;
                         countThisGroup += cnt;
                         offset += cnt;
                     }
                     if (countThisGroup == len) goto NextGroup; // all in one group
                 }
-                //Console.WriteLine();
                 // from a[] to t[] elements ordered by c-th group 
                 Parallel.Invoke(workerInvoke);
-                //Console.WriteLine();
-
-                //var span = swapped ? keysWorkspace.Span : keys.Span;
-                //for (int i = 0; i < span.Length;i++)
-                //    Console.WriteLine(span[i]);
-
+                
                 // a[]=t[] and start again until the last group
 
                 // swap the pointers for the next iteration - so we use the "keys"
                 // as the "keysWorkspace" on the 2nd/4th/6th loops
-
                 Swap(ref keys, ref keysWorkspace);
                 Swap(ref values, ref valuesWorkspace);
 
@@ -981,18 +977,19 @@ namespace SortOfDemo
 
             if (swapped)
             {
-                Console.WriteLine("Swapping");
                 CopyBlock(keysWorkspace, keys, len);
                 CopyBlock(valuesWorkspace, values, len);
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void Swap<T>(ref T x, ref T y)
         {
             var tmp = x;
             x = y;
             y = tmp;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void Swap<T>(ref Span<T> x, ref Span<T> y)
         {
             var tmp = x;
@@ -1001,12 +998,18 @@ namespace SortOfDemo
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void CopyBlock<T>(Memory<T> destination, Memory<T> source, int length) where T : struct
+        static void CopyBlock<T>(Memory<T> destination, Memory<T> source, int length = -1) where T : struct
         {
             CopyBlock(destination.Span, source.Span, length);
         }
-        static void CopyBlock<T>(Span<T> destination, Span<T> source, int length) where T : struct
+        static void ThrowOutOfRange(string paramName) => throw new ArgumentOutOfRangeException(paramName);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void CopyBlock<T>(Span<T> destination, Span<T> source, int length = -1) where T : struct
         {
+            if (length < 0) length = source.Length;
+            else if (length > source.Length) ThrowOutOfRange(nameof(length));
+            if (length > destination.Length) ThrowOutOfRange(nameof(length));
+
             Unsafe.CopyBlock(
                 ref destination.NonPortableCast<T, byte>()[0],
                 ref source.NonPortableCast<T, byte>()[0],
@@ -1015,14 +1018,14 @@ namespace SortOfDemo
 
         // borrowed from core-clr, with massive special-casing
         // https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/mscorlib/src/System/Array.cs
-        internal static void Sort(ulong* keys, int* values, int count)
+        internal static unsafe void Sort(ulong* keys, int* values, int count)
         {
             if (count < 2) return;
             // note: remove SZSort call - doesn't apply: https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/classlibnative/bcltype/arrayhelpers.cpp#L290
             IntrospectiveSort(keys, values, 0, count);
         }
 
-        public static void IntroSort(ulong[] keys, int[] values)
+        public static unsafe void IntroSort(ulong[] keys, int[] values)
         {
             fixed (ulong* k = keys)
             fixed (int* v = values)
@@ -1033,7 +1036,7 @@ namespace SortOfDemo
 
         // borrowed from core-clr, with massive special-casing
         // https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/mscorlib/src/System/Collections/Generic/ArraySortHelper.cs
-        internal static void IntrospectiveSort(ulong* keys, int* values, int left, int length)
+        internal static unsafe void IntrospectiveSort(ulong* keys, int* values, int left, int length)
         {
             if (length < 2)
                 return;
@@ -1041,7 +1044,7 @@ namespace SortOfDemo
             IntroSort(keys, values, left, length + left - 1, 2 * IntrospectiveSortUtilities.FloorLog2(length));
         }
 
-        private static void IntroSort(ulong* keys, int* values, int lo, int hi, int depthLimit)
+        private static unsafe void IntroSort(ulong* keys, int* values, int lo, int hi, int depthLimit)
         {
             while (hi > lo)
             {
@@ -1082,7 +1085,7 @@ namespace SortOfDemo
                 hi = p - 1;
             }
         }
-        private static void DownHeap(ulong* keys, int* values, int i, int n, int lo)
+        private static unsafe void DownHeap(ulong* keys, int* values, int i, int n, int lo)
         {
             ulong d = keys[lo + i - 1];
             int dValue = values[lo + i - 1];
@@ -1104,7 +1107,7 @@ namespace SortOfDemo
             values[lo + i - 1] = dValue;
         }
 
-        private static void Swap(ulong* keys, int* values, int i, int j)
+        private static unsafe void Swap(ulong* keys, int* values, int i, int j)
         {
             if (i != j)
             {
@@ -1117,7 +1120,7 @@ namespace SortOfDemo
                 values[j] = v;
             }
         }
-        private static void Heapsort(ulong* keys, int* values, int lo, int hi)
+        private static unsafe void Heapsort(ulong* keys, int* values, int lo, int hi)
         {
             int n = hi - lo + 1;
             for (int i = n / 2; i >= 1; i = i - 1)
@@ -1131,7 +1134,7 @@ namespace SortOfDemo
             }
         }
 
-        private static int PickPivotAndPartition(ulong* keys, int* values, int lo, int hi)
+        private static unsafe int PickPivotAndPartition(ulong* keys, int* values, int lo, int hi)
         {
             // Compute median-of-three.  But also partition them, since we've done the comparison.
             int middle = lo + ((hi - lo) / 2);
@@ -1161,7 +1164,7 @@ namespace SortOfDemo
             return left;
         }
 
-        private static void InsertionSort(ulong* keys, int* values, int lo, int hi)
+        private static unsafe void InsertionSort(ulong* keys, int* values, int lo, int hi)
         {
             int i, j;
             ulong t;
@@ -1181,7 +1184,7 @@ namespace SortOfDemo
                 values[j + 1] = tValue;
             }
         }
-        private static void SwapIfGreaterWithItems(ulong* keys, int* values, int a, int b)
+        private static unsafe void SwapIfGreaterWithItems(ulong* keys, int* values, int a, int b)
         {
             if (a != b && keys[a] > keys[b])
             {
