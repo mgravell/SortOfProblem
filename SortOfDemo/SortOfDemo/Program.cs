@@ -1,6 +1,7 @@
 ﻿// #define USE_TIME
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -90,35 +91,35 @@ namespace SortOfDemo
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 8);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 10);
             DualArrayIndexedRadixSortParallel(data, index, sortKeys, keysWorkspace, valuesWorkspace, countsWorkspace, 16);
-#if !USE_TIME
-            ArraySortCombinedIndex(data, index, sortKeys);
+//#if !USE_TIME
+//            ArraySortCombinedIndex(data, index, sortKeys);
 
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16);
 
-            const ulong mask = (ulong.MaxValue) << 24;
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
-            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
+//            const ulong mask = (ulong.MaxValue) << 24;
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 2, mask);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 4, mask);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 8, mask);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 10, mask);
+//            RadixSortCombinedIndex(data, index, sortKeys, keysWorkspace, 16, mask);
 
 
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16);
 
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2, mask);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4, mask);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8, mask);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10, mask);
-            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16, mask);
-#endif
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 2, mask);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 4, mask);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 8, mask);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 10, mask);
+//            RadixSortCombinedIndexSpan(data, index, sortKeys, keysWorkspace, 16, mask);
+//#endif
         }
 
 
@@ -299,6 +300,45 @@ namespace SortOfDemo
             // no need to re-invent
         }
 
+        /// <summary>
+        /// Makes a pointer usable as a Memory<T>; note that no lifetime semantics are assumed - the caller is still entirely responsible
+        /// for the lifetime of the pointer provided, and if that pointer becomes invalid: that's on the caller
+        /// </summary>
+        sealed unsafe class PointerMemory<T> : OwnedMemory<T>
+        {
+            public static Memory<T> AsMemory(void* pointer, int length)
+                => new PointerMemory<T>(pointer, length).Memory;
+
+            private readonly void* _pointer;
+            private readonly int _length;
+            public PointerMemory(void* pointer, int length)
+            {
+                _pointer = pointer;
+                _length = length;
+            }
+
+            public override bool IsDisposed => false;
+
+            public override int Length => _length;
+
+            public override Span<T> Span => new Span<T>(_pointer, _length);
+
+            protected override bool IsRetained => false;
+
+            public override MemoryHandle Pin() => new MemoryHandle(this, _pointer);
+           
+            public override bool Release() => true;
+
+            public override void Retain() { }
+
+            protected override void Dispose(bool disposing) { }
+
+            protected override bool TryGetArray(out ArraySegment<T> arraySegment)
+            {
+                arraySegment = default;
+                return false;
+            }
+        }
         private static void DualArrayIndexedRadixSortParallel(SomeType[] data, int[] index, ulong[] sortKeys, ulong[] keysWorkspace, int[] valuesWorkspace, int[] countsWorkspace, int r = 4)
         {
             using (new BasicTimer(Me() + " prepare"))
@@ -823,32 +863,30 @@ namespace SortOfDemo
                 CopyBlock(KeysWorkspace.Span.Slice(offset), Keys.Span);
                 CopyBlock(ValuesWorkspace.Span.Slice(offset), Values.Span);
             }
-            private unsafe WorkerMode Count() // retuns true if already sorted
+            private WorkerMode Count() // retuns true if already sorted
             {
                 var keys = Keys.Span;
                 var counts = CountsOffsets.Span;
+
+                for (int i = 0; i < counts.Length; i++)
+                    counts[i] = 0;
                 if (keys.IsEmpty)
                 {
-                    // still need to wipe counts, so garbage doesn't
-                    // get aggregated
-                    for (int i = 0; i < counts.Length; i++)
-                        counts[i] = 0;
                     return WorkerMode.Complete;
                 }
 
                 var mask = Mask;
                 var shift = Shift;
-                int* stackCount = stackalloc int[CountsOffsets.Length];
-
+               
                 // count into a local buffer - avoid some range checking
                 for (int i = 0; i < keys.Length; i++)
-                    stackCount[(int)(keys[i] >> shift) & mask]++;
+                    counts[(int)(keys[i] >> shift) & mask]++;
 
                 SingleGroupIndex = -1;
                 var len = keys.Length;
                 for (int i = 0; i < counts.Length; i++)
                 {
-                    var grpCount = stackCount[i];
+                    var grpCount = counts[i];
                     if(grpCount == len) SingleGroupIndex = i; // single group detected
                     counts[i] = grpCount;
                 }
