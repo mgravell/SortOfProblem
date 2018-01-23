@@ -116,7 +116,8 @@ namespace ElideBoundsCheckBenchmark
             {
                 for (int loop = 0; loop < OpsPerInvoke; loop++)
                 {
-                    for (int i = 0; i < _values.Length; i++)
+                    int len = _values.Length;
+                    for (int i = 0; i < len; i++)
                         xor ^= values[i];
                 }
             }
@@ -150,7 +151,8 @@ namespace ElideBoundsCheckBenchmark
                 for (int loop = 0; loop < OpsPerInvoke; loop++)
                 {
                     var ptr = values;
-                    for (int i = 0; i < _values.Length; i++)
+                    int len = _randomIndices.Length;
+                    while (len-- > 0)
                         xor ^= *ptr++;
                 }
             }
@@ -168,7 +170,8 @@ namespace ElideBoundsCheckBenchmark
                 for (int loop = 0; loop < OpsPerInvoke; loop++)
                 {
                     var ptr = values + from;
-                    for (int i = from; i < to; i++)
+                    int len = to - from;
+                    while (len-- > 0)
                         xor ^= *ptr++;
                 }
             }
@@ -180,11 +183,11 @@ namespace ElideBoundsCheckBenchmark
         public int SpanSequentialFull()
         {
             int xor = 0;
-            var span = new Span<int>(_values);
+            var values = new Span<int>(_values);
             for (int loop = 0; loop < OpsPerInvoke; loop++)
             {
-                for (int i = 0; i < span.Length; i++)
-                    xor ^= span[i];
+                for (int i = 0; i < values.Length; i++)
+                    xor ^= values[i];
             }
             return xor;
         }
@@ -195,11 +198,11 @@ namespace ElideBoundsCheckBenchmark
         {
             int xor = 0;
             int from = LowerInclusive, to = UpperExclusive;
-            var span = new Span<int>(_values);
+            var values = new Span<int>(_values);
             for (int loop = 0; loop < OpsPerInvoke; loop++)
             {
                 for (int i = from; i < to; i++)
-                    xor ^= span[i];
+                    xor ^= values[i];
             }
             return xor;
         }
@@ -210,11 +213,166 @@ namespace ElideBoundsCheckBenchmark
         {
             int xor = 0;
             int from = LowerInclusive, to = UpperExclusive;
-            var span = new Span<int>(_values).Slice(from, to - from);
+            var values = new Span<int>(_values).Slice(from, to - from);
             for (int loop = 0; loop < OpsPerInvoke; loop++)
             {
-                for (int i = 0; i < span.Length; i++)
-                    xor ^= span[i];
+                for (int i = 0; i < values.Length; i++)
+                    xor ^= values[i];
+            }
+            return xor;
+        }
+
+
+
+        [Benchmark(Description = "array [0,len)", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public int ArrayRandomFull()
+        {
+            int xor = 0;
+            var values = _values;
+            var index = _randomIndices;
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                for (int i = 0; i < index.Length; i++)
+                    xor ^= values[index[i]];
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "array [lower,upper)", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public int ArrayRandomPartial()
+        {
+            int xor = 0;
+            var values = _values;
+            var index = _randomIndices;
+            int from = LowerInclusive, to = UpperExclusive;
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                for (int i = from; i < to; i++)
+                    xor ^= values[index[i]];
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "fixed [0,len), index", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public unsafe int FixedRandomFullByIndex()
+        {
+            int xor = 0;
+            fixed (int* values = _values)
+            fixed (int* index = _randomIndices)
+            {
+                for (int loop = 0; loop < OpsPerInvoke; loop++)
+                {
+                    int len = _randomIndices.Length;
+                    for (int i = 0; i < len; i++)
+                        xor ^= values[index[i]];
+                }
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "fixed [lower,upper), index", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public unsafe int FixedRandomPartialByIndex()
+        {
+            int xor = 0;
+            fixed (int* values = _values)
+            fixed (int* index = _randomIndices)
+            {
+                int from = LowerInclusive, to = UpperExclusive;
+                for (int loop = 0; loop < OpsPerInvoke; loop++)
+                {
+                    for (int i = from; i < to; i++)
+                        xor ^= values[index[i]];
+                }
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "fixed [0,len), incr", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public unsafe int FixedRandomFullByIncr()
+        {
+            int xor = 0;
+            fixed (int* values = _values)
+            fixed (int* index = _randomIndices)
+            {
+                for (int loop = 0; loop < OpsPerInvoke; loop++)
+                {
+                    var ptr = index;
+                    int len = _randomIndices.Length;
+                    while (len-- > 0)
+                        xor ^= values[*ptr++];
+                }
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "fixed [lower,upper), incr", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public unsafe int FixedRandomPartialByIncr()
+        {
+            int xor = 0;
+            fixed (int* values = _values)
+            fixed (int* index = _randomIndices)
+            {
+                int from = LowerInclusive, to = UpperExclusive;
+                for (int loop = 0; loop < OpsPerInvoke; loop++)
+                {
+                    var ptr = index + from;
+                    int len = to - from;
+                    while (len-- > 0)
+                        xor ^= values[*ptr++];
+                }
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "span [0,len)", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public int SpanRandomFull()
+        {
+            int xor = 0;
+            var values = new Span<int>(_values);
+            var index = new Span<int>(_randomIndices);
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                for (int i = 0; i < index.Length; i++)
+                    xor ^= values[index[i]];
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "span [lower,upper)", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public int SpanRandomPartial()
+        {
+            int xor = 0;
+            int from = LowerInclusive, to = UpperExclusive;
+            var values = new Span<int>(_values);
+            var index = new Span<int>(_randomIndices);
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                for (int i = from; i < to; i++)
+                    xor ^= values[index[i]];
+            }
+            return xor;
+        }
+
+        [Benchmark(Description = "span slice", OperationsPerInvoke = OpsPerInvoke)]
+        [BenchmarkCategory("random")]
+        public int SpanRandomSliced()
+        {
+            int xor = 0;
+            int from = LowerInclusive, to = UpperExclusive;
+            var values = new Span<int>(_values);
+            var index = new Span<int>(_randomIndices).Slice(from, to - from);
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                for (int i = 0; i < index.Length; i++)
+                    xor ^= values[index[i]];
             }
             return xor;
         }
