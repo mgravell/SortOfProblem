@@ -5,7 +5,6 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -47,16 +46,21 @@ namespace SortOfDemo
         {
             Console.WriteLine($"Processor count: {Environment.ProcessorCount}");
             Console.WriteLine("Supported instruction sets:");
-            foreach(var instructionSet in
-                from type in typeof(Avx).Assembly.GetTypes()
-                where type.Namespace == "System.Runtime.Intrinsics.X86"
-                let isSupported = type.GetProperty("IsSupported", BindingFlags.Static | BindingFlags.Public)
-                where isSupported != null
-                orderby type.Name
-                select (type.Name, isSupported))
-            {
-                Console.WriteLine($"{instructionSet.Name}: {instructionSet.isSupported.GetValue(null)}");
-            }
+            Console.WriteLine($"{nameof(Aes)}: {Aes.IsSupported}");
+            Console.WriteLine($"{nameof(Avx)}: {Avx.IsSupported}");
+            Console.WriteLine($"{nameof(Avx2)}: {Avx2.IsSupported}");
+            Console.WriteLine($"{nameof(Bmi1)}: {Bmi1.IsSupported}");
+            Console.WriteLine($"{nameof(Bmi2)}: {Bmi2.IsSupported}");
+            Console.WriteLine($"{nameof(Fma)}: {Fma.IsSupported}");
+            Console.WriteLine($"{nameof(Lzcnt)}: {Lzcnt.IsSupported}");
+            Console.WriteLine($"{nameof(Pclmulqdq)}: {Pclmulqdq.IsSupported}");
+            Console.WriteLine($"{nameof(Popcnt)}: {Popcnt.IsSupported}");
+            Console.WriteLine($"{nameof(Sse)}: {Sse.IsSupported}");
+            Console.WriteLine($"{nameof(Sse2)}: {Sse2.IsSupported}");
+            Console.WriteLine($"{nameof(Sse3)}: {Sse3.IsSupported}");
+            Console.WriteLine($"{nameof(Sse41)}: {Sse41.IsSupported}");
+            Console.WriteLine($"{nameof(Sse42)}: {Sse42.IsSupported}");
+            Console.WriteLine($"{nameof(Ssse3)}: {Ssse3.IsSupported}");
 
 #if USE_TIME
             Console.WriteLine($"Release date is to the second; some tests disabled");
