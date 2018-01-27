@@ -52,7 +52,7 @@ namespace Sorted
             //Console.WriteLine(string.Join(", ", arr));
 
             var rand = new Random(12345);
-            const int LOOP = 2;
+            const int LOOP = 4;
             float[] origFloat = new float[16 * 1024 * 1024], valsFloat = new float[origFloat.Length];
             uint[] origUInt32 = new uint[origFloat.Length], valsUInt32 = new uint[origFloat.Length];
             int[] origInt32 = new int[origFloat.Length], valsInt32 = new int[origFloat.Length];
@@ -91,7 +91,6 @@ namespace Sorted
                 }
                 CheckSort<float>(valsFloat);
             }
-            Console.ReadLine();
             for (int i = 0; i < LOOP; i++)
             {
                 origFloat.CopyTo(valsFloat, 0);

@@ -6,6 +6,41 @@ namespace Sorted
     public static partial class RadixSort
     {
         private const int DEFAULT_R = 4, MAX_R = 16;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void ApplyAscending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
+                int start, int end, int shift, uint groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void ApplyDescending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
+            int start, int end, int shift, uint groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((~keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void BucketCountAscending(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((keys[i] >> shift) & groupMask)]++;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void BucketCountDescending(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((~keys[i] >> shift) & groupMask)]++;
+        }
+
         public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
@@ -13,7 +48,7 @@ namespace Sorted
                 Sort32(RadixConverter.GetNonPassthru<T, uint>(),
                     keys.NonPortableCast<T, uint>(),
                     workspace.NonPortableCast<T, uint>(),
-                    r, descending, uint.MaxValue);
+                    r, uint.MaxValue, !descending);
             }
             else
             {
@@ -21,7 +56,7 @@ namespace Sorted
             }
         }
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => Sort32(null, keys, workspace, r, descending, mask);
+            => Sort32(null, keys, workspace, r, mask, !descending);
 
         static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
         {
@@ -44,7 +79,7 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
-        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, bool descending, uint keyMask)
+        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending)
         {
             if (keys.Length <= 1 || keyMask == 0) return;
             if (workspace.Length < WorkspaceSize<uint>(keys.Length, r))
@@ -63,8 +98,7 @@ namespace Sorted
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if(descending ? SortDescending32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask)
-                : SortAscending32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask))
+            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending))
             {
                 Swap(ref keys, ref workspace, ref reversed);
             }
@@ -86,7 +120,8 @@ namespace Sorted
             }
         }
 
-        private static bool SortAscending32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, int countLength, int len, Span<uint> countsOffsets, int groups, uint mask)
+        private static bool SortCore32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask,
+            int countLength, int len, Span<uint> countsOffsets, int groups, uint mask, bool ascending)
         {
             bool reversed = false;
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
@@ -99,83 +134,34 @@ namespace Sorted
                     else continue;
                 }
 
-                // counting elements of the c-th group 
-                countsOffsets.Clear();
-                for (int i = 0; i < len; i++)
-                    countsOffsets[(int)((keys[i] >> shift) & groupMask)]++;
+                if (ascending)
+                    BucketCountAscending(countsOffsets, keys, 0, len, shift, groupMask);
+                else
+                    BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask);
 
+                if (!ComputeOffsets(countsOffsets, len)) continue; // all in one group
 
-                // calculating prefixes
-                uint offset = 0;
-                for (int i = 0; i < countLength; i++)
-                {
-                    var prev = offset;
-                    var grpCount = countsOffsets[i];
-                    if (grpCount == len) goto NextLoop; // all in one group
-                    offset += grpCount;
-                    countsOffsets[i] = prev;
-                }
-
-                // from a[] to t[] elements ordered by c-th group
-
-                for (int i = 0; i < len; i++)
-                {
-                    int j = (int)countsOffsets[(int)((keys[i] >> shift) & groupMask)]++;
-                    workspace[j] = keys[i];
-                }
-
+                if (ascending)
+                    ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
+                else
+                    ApplyDescending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
 
                 Swap(ref keys, ref workspace, ref reversed);
-
-                NextLoop:
-                ;
             }
             return reversed;
         }
-
-        private static bool SortDescending32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, int countLength, int len, Span<uint> countsOffsets, int groups, uint mask)
+        static bool ComputeOffsets(Span<uint> countsOffsets, int length)
         {
-            bool reversed = false;
-            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            uint offset = 0;
+            for (int i = 0; i < countsOffsets.Length; i++)
             {
-                uint groupMask = (keyMask >> shift) & mask;
-                keyMask &= ~(mask << shift); // remove those bits from the keyMask to allow fast exit
-                if (groupMask == 0)
-                {
-                    if (keyMask == 0) break;
-                    else continue;
-                }
-
-                // counting elements of the c-th group 
-                countsOffsets.Clear();
-                for (int i = 0; i < len; i++)
-                    countsOffsets[(int)((~keys[i] >> shift) & groupMask)]++;
-                
-
-                // calculating prefixes
-                uint offset = 0;
-                for (int i = 0; i < countLength; i++)
-                {
-                    var prev = offset;
-                    var grpCount = countsOffsets[i];
-                    if (grpCount == len) goto NextLoop; // all in one group
-                    offset += grpCount;
-                    countsOffsets[i] = prev;
-                }
-
-                // from a[] to t[] elements ordered by c-th group
-                for (int i = 0; i < len; i++)
-                {
-                    int j = (int)countsOffsets[(int)((~keys[i] >> shift) & groupMask)]++;
-                    workspace[j] = keys[i];
-                }
-
-                Swap(ref keys, ref workspace, ref reversed);
-
-                NextLoop:
-                ;
+                var prev = offset;
+                var grpCount = countsOffsets[i];
+                if (grpCount == length) return false;
+                offset += grpCount;
+                countsOffsets[i] = prev;
             }
-            return reversed;
+            return true;
         }
 
         public static int WorkspaceSize<T>(Span<T> keys, int r = DEFAULT_R) => WorkspaceSize<T>(keys.Length, r);

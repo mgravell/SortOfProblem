@@ -42,9 +42,11 @@ namespace Sorted
             private void ExecuteImpl()
             {
                 var step = _step;
-                while(true)
+
+                while (true)
                 {
                     int batchIndex = Interlocked.Increment(ref _batchIndex);
+                    // Console.WriteLine($"{step}/{batchIndex}: {Environment.CurrentManagedThreadId}");
                     var start = _batchSize * batchIndex;
                     if (start >= _length) break;
 
@@ -57,8 +59,8 @@ namespace Sorted
             {
                 int count = end - start;
                 //Console.WriteLine($"{step}/{_shift}/{batchIndex}: [{start},{end}] ({count})");
-                
-                switch(step)
+
+                switch (step)
                 {
                     case WorkerStep.Copy:
                         _keys.Span.Slice(start, count).CopyTo(_workspace.Span.Slice(start, count));
@@ -69,115 +71,54 @@ namespace Sorted
                         ToFromRadix(step, start, count);
                         break;
                     case WorkerStep.BucketCountAscending:
-                        BucketCountAscending(batchIndex, start, end, count);
-                        break;
                     case WorkerStep.BucketCountDescending:
-                        BucketCountDescending(batchIndex, start, end, count);
+                        {
+                            var keys = _keys.Span.NonPortableCast<T, uint>();
+                            var buckets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
+                                                            batchIndex * _bucketCount, _bucketCount);
+                            if (step == WorkerStep.BucketCountAscending)
+                                BucketCountAscending(buckets, keys, start, end, _shift, _groupMask);
+                            else
+                                BucketCountDescending(buckets, keys, start, end, _shift, _groupMask);
+                        }
                         break;
                     case WorkerStep.ApplyAscending:
-                        ApplyAscending(batchIndex, start, end, count);
-                        break;
                     case WorkerStep.ApplyDescending:
-                        ApplyDescending(batchIndex, start, end, count);
+                        {
+                            var offsets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
+                                                batchIndex * _bucketCount, _bucketCount);
+                            if (NeedsApply(offsets))
+                            {
+                                var keys = _keys.Span.NonPortableCast<T, uint>();
+                                var workspace = _workspace.Span.NonPortableCast<T, uint>();
+                                if (step == WorkerStep.ApplyAscending)
+                                    ApplyAscending(offsets, keys, workspace, start, end, _shift, _groupMask);
+                                else
+                                    ApplyDescending(offsets, keys, workspace, start, end, _shift, _groupMask);
+                            }
+                            else
+                            {
+                                _keys.Span.Slice(start, count).CopyTo(_workspace.Span.Slice((int)offsets[0], count));
+                            }
+                        }
                         break;
                     default:
                         throw new NotImplementedException($"Unknown worker step: {step}");
                 }
-                
+
             }
 
-
-            private void ApplyAscending(int batchIndex, int start, int end, int count)
+            private static bool NeedsApply(Span<uint> offsets)
             {
-                var offsets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
-                                                batchIndex * _bucketCount, _bucketCount);
-                var activeGroups = 0;
-                var offset = offsets[0];
-                for(int i = 1; i < offsets.Length; i++)
-                {
-                    if (offset != (offset = offsets[i]) && ++activeGroups == 2)
-                        break;
-                }
-
-                if (activeGroups < 2)
-                {
-                    // single group (note: "0" is when everything is in the last group)
-                    // so: we can simply copy the entire chunk
-                    _keys.Span.Slice(start, count).CopyTo(_workspace.Span.Slice((int)offsets[0], count));
-                }
-                else
-                {
-                    var keys = _keys.Span.NonPortableCast<T, uint>();
-                    var workspace = _workspace.Span.NonPortableCast<T, uint>();
-                    var shift = _shift;
-                    var groupMask = _groupMask;
-                    for (int i = start; i < end; i++)
-                    {
-                        var j = offsets[(int)((keys[i] >> shift) & groupMask)]++;
-                        workspace[(int)j] = keys[i];
-                    }
-                }
-            }
-
-            private void ApplyDescending(int batchIndex, int start, int end, int count)
-            {
-                var offsets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
-                                                batchIndex * _bucketCount, _bucketCount);
                 var activeGroups = 0;
                 var offset = offsets[0];
                 for (int i = 1; i < offsets.Length; i++)
                 {
-                    if (offset != (offset = offsets[i]) && ++activeGroups == 2)
-                        break;
+                    if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
                 }
-
-                if (activeGroups < 2)
-                {
-                    // single group (note: "0" is when everything is in the last group)
-                    // so: we can simply copy the entire chunk
-                    _keys.Span.Slice(start, count).CopyTo(_workspace.Span.Slice((int)offsets[0], count));
-                }
-                else
-                {
-                    var keys = _keys.Span.NonPortableCast<T, uint>();
-                    var workspace = _workspace.Span.NonPortableCast<T, uint>();
-                    var shift = _shift;
-                    var groupMask = _groupMask;
-                    for (int i = start; i < end; i++)
-                    {
-                        var j = offsets[(int)((~keys[i] >> shift) & groupMask)]++;
-                        workspace[(int)j] = keys[i];
-                    }
-                }
+                return false;
             }
-
-            private void BucketCountAscending(int batchIndex, int start, int end, int count)
-            {
-                var buckets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
-                                                batchIndex * _bucketCount, _bucketCount);
-                var shift = _shift;
-                var groupMask = _groupMask;
-                var keys = _keys.Span.NonPortableCast<T, uint>();
-                buckets.Clear();
-                for (int i = start; i < end; i++)
-                {
-                    buckets[(int)((keys[i] >> shift) & groupMask)]++;
-                }
-                //Console.WriteLine($"batch {batchIndex}; {count} items");
-            }
-
-            private void BucketCountDescending(int batchIndex, int start, int end, int count)
-            {
-                var buckets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
-                                                batchIndex * _bucketCount, _bucketCount);
-                var shift = _shift;
-                var groupMask = _groupMask;
-                var keys = _keys.Span.NonPortableCast<T, uint>();
-                buckets.Clear();
-                for (int i = start; i < end; i++)
-                    buckets[(int)((~keys[i] >> shift) & groupMask)]++;
-            }
-
+            
             public bool ComputeOffsets()
             {
                 var allBuckets = _countsOffsets.Span.NonPortableCast<T, uint>();
@@ -187,11 +128,11 @@ namespace Sorted
 
                 //Console.WriteLine();
                 uint offset = 0;
-                for(int i = 0; i < bucketCount; i++)
+                for (int i = 0; i < bucketCount; i++)
                 {
                     uint groupCount = 0;
                     int sourceOffset = i;
-                    for(int j = 0; j < batchCount; j++)
+                    for (int j = 0; j < batchCount; j++)
                     {
                         var count = allBuckets[sourceOffset];
                         //Console.WriteLine($"bucket [{i}/{j}]={sourceOffset}: {count}; {offset}");
@@ -240,14 +181,14 @@ namespace Sorted
                     Interlocked.Exchange(ref _batchIndex, -1);
                     _step = step;
                 }
-                if(_workers == null)
+                if (_workers == null)
                 {
                     ExecuteImpl();
                 }
                 else
                 {
                     Parallel.Invoke(_workers);
-                }                
+                }
             }
             public Worker(RadixConverter<uint> converter, int batchSize, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
             {
@@ -260,18 +201,15 @@ namespace Sorted
                 _countsOffsets = countsOffsets;
                 _converter32 = converter;
                 _bucketCount = bucketCount;
-                Action exec = ExecuteImpl;
 
                 int workerCount = WorkerCount(_length);
                 if (workerCount > 1)
                 {
+                    Action exec = ExecuteImpl;
                     var workers = _workers = new Action[workerCount];
                     for (int i = 0; i < workers.Length; i++)
                         workers[i] = exec;
                 }
-
-                Console.WriteLine($"Workers: {workerCount}");
-
             }
 
             public void Swap() => RadixSort.Swap(ref _keys, ref _workspace);
@@ -313,7 +251,7 @@ namespace Sorted
 
 
             var worker = new Worker<T>(converter, len / workerCount, bucketCount, keys, workspace, workerCountsOffsets);
-            
+
             bool reversed = false;
             if (converter != null)
             {
@@ -355,7 +293,7 @@ namespace Sorted
                 worker.Execute(WorkerStep.Copy);
             }
         }
-        
+
         public static int ParallelWorkspaceSize<T>(Span<T> keys, int r = DEFAULT_R) => ParallelWorkspaceSize<T>(keys.Length, r);
         public static int ParallelWorkspaceSize<T>(int count, int r = DEFAULT_R)
         {
@@ -366,7 +304,7 @@ namespace Sorted
             int countLength = 1 << r;
             int countsOffsetsAsT = (((countLength << 2) - 1) / Unsafe.SizeOf<T>()) + 1;
 
-            return (countsOffsetsAsT  * WorkerCount(count)) + count;
+            return (countsOffsetsAsT * WorkerCount(count)) + count;
         }
     }
 }
