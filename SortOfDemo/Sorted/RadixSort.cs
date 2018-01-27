@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
-    public static class RadixSort
+    public static partial class RadixSort
     {
         private const int DEFAULT_R = 4, MAX_R = 16;
         public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
@@ -51,7 +51,7 @@ namespace Sorted
                 throw new ArgumentException($"The workspace provided is insufficient ({workspace.Length} vs {WorkspaceSize<uint>(keys.Length, r)} needed); the {nameof(WorkspaceSize)} method can be used to determine the minimum size required", nameof(workspace));
 
             int countLength = 1 << r, len = keys.Length;
-            Span<uint> countsOffsets = workspace.Slice(0, countLength);
+            var countsOffsets = workspace.Slice(0, countLength);
             workspace = workspace.Slice(countLength, len);
             int groups = GroupCount<uint>(r);
             uint mask = (uint)(countLength - 1);

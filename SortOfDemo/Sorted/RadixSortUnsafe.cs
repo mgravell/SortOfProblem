@@ -134,8 +134,8 @@ namespace Sorted
                 ptr = keys;
                 for (int i = 0; i < len; i++)
                 {
-                    int j = (int)countsOffsets[(int)((*ptr++ >> shift) & groupMask)]++;
-                    workspace[j] = keys[i];
+                    int j = (int)countsOffsets[(int)((*ptr >> shift) & groupMask)]++;
+                    workspace[j] = *ptr++;
                 }
 
 
@@ -183,8 +183,8 @@ namespace Sorted
                 ptr = keys;
                 for (int i = 0; i < len; i++)
                 {
-                    int j = (int)countsOffsets[(int)((~*ptr++ >> shift) & groupMask)]++;
-                    workspace[j] = keys[i];
+                    int j = (int)countsOffsets[(int)((~*ptr >> shift) & groupMask)]++;
+                    workspace[j] = *ptr++;
                 }
 
                 Swap(ref keys, ref workspace, ref reversed);

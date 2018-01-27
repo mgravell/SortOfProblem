@@ -24,6 +24,21 @@ namespace Sorted
     {
         static void Main()
         {
+#if DEBUG
+            Execute(); // so we get good break-points
+#else
+            try
+            {
+                Execute();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex);
+            }
+#endif
+        }
+        static void Execute()
+        {
             //var z = int.MinValue;
             //Console.WriteLine((uint)z);
             //var c = RadixConverter.Get<int, uint>();
@@ -38,7 +53,7 @@ namespace Sorted
 
             var rand = new Random(12345);
             const int LOOP = 2;
-            float[] origFloat = new float[8 * 1024 * 1024], valsFloat = new float[origFloat.Length];
+            float[] origFloat = new float[16 * 1024 * 1024], valsFloat = new float[origFloat.Length];
             uint[] origUInt32 = new uint[origFloat.Length], valsUInt32 = new uint[origFloat.Length];
             int[] origInt32 = new int[origFloat.Length], valsInt32 = new int[origFloat.Length];
 
@@ -49,7 +64,10 @@ namespace Sorted
                 origInt32[i] = ival;
                 origUInt32[i] = unchecked((uint)ival);
             }
-            var wFloat = new float[RadixSort.WorkspaceSize<float>(origFloat.Length)];
+            var wFloat = new float[Math.Max(
+                RadixSort.WorkspaceSize<float>(origFloat.Length),
+                RadixSort.ParallelWorkspaceSize<float>(origFloat.Length)
+            )];
             Console.WriteLine($"Workspace length: {wFloat.Length}");
 
             Console.WriteLine();
@@ -64,6 +82,16 @@ namespace Sorted
                 }
                 CheckSort<float>(valsFloat);
             }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origFloat.CopyTo(valsFloat, 0);
+                using (new BasicTimer("RadixSort.ParallelSort"))
+                {
+                    RadixSort.ParallelSort<float>(valsFloat, wFloat);
+                }
+                CheckSort<float>(valsFloat);
+            }
+            Console.ReadLine();
             for (int i = 0; i < LOOP; i++)
             {
                 origFloat.CopyTo(valsFloat, 0);
@@ -115,7 +143,7 @@ namespace Sorted
                 origFloat.CopyTo(valsFloat, 0);
                 using (new BasicTimer("Array.Sort/neg CompareTo"))
                 {
-                    Array.Sort<float>(valsFloat, (x,y)=>y.CompareTo(x));
+                    Array.Sort<float>(valsFloat, (x, y) => y.CompareTo(x));
                 }
                 CheckSortDescending<float>(valsFloat);
             }
@@ -287,7 +315,7 @@ namespace Sorted
         {
             if (vals.Length <= 1) return;
             var prev = vals[0];
-            for(int i = 1; i < vals.Length; i++)
+            for (int i = 1; i < vals.Length; i++)
             {
                 var val = vals[i];
                 if (val.CompareTo(prev) < 0) throw new InvalidOperationException($"not sorted: [{i - 1}] ({prev}) vs [{i}] ({val})");
