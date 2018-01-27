@@ -7,6 +7,10 @@ namespace Sorted
     {
         static RadixConverter()
         {
+            RegisterDefaultConverters();
+        }
+        public static void RegisterDefaultConverters()
+        {
             Register<uint, uint>(RadixConverter<uint>.Null);
             Register<int, uint>(new RadixConverterInt32());
             Register<float, uint>(new RadixConverterSingle());

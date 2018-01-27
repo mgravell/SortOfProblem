@@ -11,7 +11,7 @@ namespace Sorted
                 throw new InvalidOperationException($"The size of '{typeof(TValue).Name}' ({Unsafe.SizeOf<TValue>()} bytes) and '{typeof(TRadix).Name}' ({Unsafe.SizeOf<TRadix>()} bytes) must match");
 
             var old = Cache<TValue, TRadix>.Instance;
-            if (old is RadixConverter<TRadix>.Inbuilt)
+            if (old is RadixConverter<TRadix>.Inbuilt && !(converter is RadixConverter<TRadix>.Inbuilt))
                 throw new InvalidOperationException($"The existing converter for '{typeof(TValue).Name}' is inbuilt and cannot be replaced");
 
             Cache<TValue, TRadix>.Instance = converter ?? throw new ArgumentNullException(nameof(converter));

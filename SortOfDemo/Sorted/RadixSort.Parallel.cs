@@ -46,7 +46,6 @@ namespace Sorted
                 while (true)
                 {
                     int batchIndex = Interlocked.Increment(ref _batchIndex);
-                    // Console.WriteLine($"{step}/{batchIndex}: {Environment.CurrentManagedThreadId}");
                     var start = _batchSize * batchIndex;
                     if (start >= _length) break;
 
@@ -58,7 +57,7 @@ namespace Sorted
             private void Execute(WorkerStep step, int batchIndex, int start, int end)
             {
                 int count = end - start;
-                //Console.WriteLine($"{step}/{_shift}/{batchIndex}: [{start},{end}] ({count})");
+                // Console.WriteLine($"{step}/{_shift}/{batchIndex}: [{start},{end}] ({count}) on thread {Environment.CurrentManagedThreadId}");
 
                 switch (step)
                 {
@@ -223,7 +222,7 @@ namespace Sorted
                 }
             }
         }
-        static readonly int MaxWorkerCount = 1; // Environment.ProcessorCount;
+        static readonly int MaxWorkerCount = Environment.ProcessorCount;
 
         private static int WorkerCount(int count)
         {
@@ -273,15 +272,11 @@ namespace Sorted
                 // counting elements of the c-th group
                 worker.SetGroup(groupMask, shift);
                 worker.Execute(descending ? WorkerStep.BucketCountDescending : WorkerStep.BucketCountAscending);
-                if (!worker.ComputeOffsets())
-                    goto NextLoop; // all in one group
+                if (!worker.ComputeOffsets()) continue; // all in one group
 
                 worker.Execute(descending ? WorkerStep.ApplyDescending : WorkerStep.ApplyAscending);
                 worker.Swap();
                 reversed = !reversed;
-
-                NextLoop:
-                ;
             }
 
             if (converter != null)
