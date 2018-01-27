@@ -5,12 +5,6 @@ namespace Sorted
 {
     public static partial class RadixConverter
     {
-        static RadixConverter()
-        {
-            Register<uint, uint>(RadixConverter<uint>.Null);
-            Register<int, uint>(new RadixConverterInt32());
-            Register<float, uint>(new RadixConverterSingle());
-        }
         public static void Register<TValue, TRadix>(RadixConverter<TRadix> converter) where TValue : struct where TRadix : struct
         {
             if (Unsafe.SizeOf<TValue>() != Unsafe.SizeOf<TRadix>())
