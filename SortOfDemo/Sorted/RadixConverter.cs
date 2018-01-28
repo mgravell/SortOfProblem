@@ -20,10 +20,23 @@ namespace Sorted
         public static RadixConverter<TRadix> Get<TValue, TRadix>() where TValue : struct where TRadix : struct
             => Cache<TValue, TRadix>.Instance ?? throw new InvalidOperationException($"No radix converter is registered to map between '{typeof(TValue).Name}' and '{typeof(TRadix).Name}'");
 
+        [Obsolete("Prefer GetNonPassthruWithSignSupport")]
         internal static RadixConverter<TRadix> GetNonPassthru<TValue, TRadix>() where TValue : struct where TRadix : struct
         {
             var converter = Get<TValue, TRadix>();
-            return converter is RadixConverter<TRadix>.NullConverter ? null : converter;
+            return (converter == null || converter.IsTrivial) ? null : converter;
+        }
+        internal static RadixConverter<TRadix> GetNonPassthruWithSignSupport<TValue, TRadix>(out bool isSigned) where TValue : struct where TRadix : struct
+        {
+            var converter = Get<TValue, TRadix>();
+            isSigned = default;
+            if(converter != null)
+            {
+                isSigned = converter.IsSigned;
+                if (converter.IsTrivial || (isSigned && converter.IsTrivialWhenSigned))
+                    converter = null;
+            }
+            return converter;
         }
 
         static class Cache<TValue, TRadix> where TValue : struct where TRadix : struct

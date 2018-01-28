@@ -12,9 +12,9 @@ namespace Sorted
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                ParallelSort32<T>(RadixConverter.GetNonPassthru<T, uint>(),
+                ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out bool isSigned),
                     keys, workspace,
-                    r, descending, uint.MaxValue);
+                    r, descending, uint.MaxValue, isSigned);
             }
             else
             {
@@ -23,7 +23,7 @@ namespace Sorted
         }
 
         public static void ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => ParallelSort32<uint>(null, keys, workspace, r, descending, mask);
+            => ParallelSort32<uint>(null, keys, workspace, r, descending, mask, false);
 
 
         enum WorkerStep
@@ -118,23 +118,36 @@ namespace Sorted
                 return false;
             }
             
-            public bool ComputeOffsets()
+            public bool ComputeOffsets(int bucketOffset)
             {
                 var allBuckets = _countsOffsets.Span.NonPortableCast<T, uint>();
                 int bucketCount = _bucketCount,
                     batchCount = allBuckets.Length / bucketCount,
                     len = _length;
 
-                //Console.WriteLine();
                 uint offset = 0;
-                for (int i = 0; i < bucketCount; i++)
+                for (int i = bucketOffset; i < bucketCount; i++)
                 {
                     uint groupCount = 0;
                     int sourceOffset = i;
                     for (int j = 0; j < batchCount; j++)
                     {
                         var count = allBuckets[sourceOffset];
-                        //Console.WriteLine($"bucket [{i}/{j}]={sourceOffset}: {count}; {offset}");
+                        allBuckets[sourceOffset] = offset;
+                        offset += count;
+                        groupCount += count;
+
+                        sourceOffset += bucketCount;
+                    }
+                    if (groupCount == len) return false; // all in one group
+                }
+                for (int i = 0; i < bucketOffset; i++)
+                {
+                    uint groupCount = 0;
+                    int sourceOffset = i;
+                    for (int j = 0; j < batchCount; j++)
+                    {
+                        var count = allBuckets[sourceOffset];
                         allBuckets[sourceOffset] = offset;
                         offset += count;
                         groupCount += count;
@@ -231,7 +244,7 @@ namespace Sorted
         }
 
         private static void ParallelSort32<T>(RadixConverter<uint> converter, Memory<T> keys, Memory<T> workspace,
-            int r, bool descending, uint keyMask) where T : struct
+            int r, bool descending, uint keyMask, bool isSigned) where T : struct
         {
             if (keys.Length <= 1 || keyMask == 0) return;
             if (workspace.Length < ParallelWorkspaceSize<uint>(keys.Length, r))
@@ -259,6 +272,7 @@ namespace Sorted
                 reversed = !reversed;
             }
 
+            int invertC = isSigned ? groups - 1 : -1;
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
                 uint groupMask = (keyMask >> shift) & mask;
@@ -272,8 +286,8 @@ namespace Sorted
                 // counting elements of the c-th group
                 worker.SetGroup(groupMask, shift);
                 worker.Execute(descending ? WorkerStep.BucketCountDescending : WorkerStep.BucketCountAscending);
-                if (!worker.ComputeOffsets()) continue; // all in one group
-
+                if (!worker.ComputeOffsets(c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
+                
                 worker.Execute(descending ? WorkerStep.ApplyDescending : WorkerStep.ApplyAscending);
                 worker.Swap();
                 reversed = !reversed;

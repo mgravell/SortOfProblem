@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Sorted
@@ -41,22 +42,35 @@ namespace Sorted
                 buckets[(int)((~keys[i] >> shift) & groupMask)]++;
         }
 
+        public static unsafe void SortSmall<T>(this Span<T> keys, int r = DEFAULT_R, bool descending = false) where T : struct
+        {
+            int workspaceSize = WorkspaceSize(keys, r);
+            byte* workspace = stackalloc byte[workspaceSize * Unsafe.SizeOf<T>()];
+            Sort<T>(keys, new Span<T>(workspace, workspaceSize), r, descending);
+        }
         public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                Sort32(RadixConverter.GetNonPassthru<T, uint>(),
+                Sort32(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out bool isSigned),
                     keys.NonPortableCast<T, uint>(),
                     workspace.NonPortableCast<T, uint>(),
-                    r, uint.MaxValue, !descending);
+                    r, uint.MaxValue, !descending, isSigned);
             }
             else
             {
                 throw new NotSupportedException($"Sort type '{typeof(T).Name}' is {Unsafe.SizeOf<T>()} bytes, which is not supported");
             }
         }
+
+        public static unsafe void SortSmall(this Span<uint> keys, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        {
+            int workspaceSize = WorkspaceSize(keys, r);
+            uint* workspace = stackalloc uint[workspaceSize];
+            Sort32(null, keys, new Span<uint>(workspace, workspaceSize), r, mask, !descending, false);
+        }
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => Sort32(null, keys, workspace, r, mask, !descending);
+            => Sort32(null, keys, workspace, r, mask, !descending, false);
 
         static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
         {
@@ -79,7 +93,7 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
-        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending)
+        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, bool isSigned)
         {
             if (keys.Length <= 1 || keyMask == 0) return;
             if (workspace.Length < WorkspaceSize<uint>(keys.Length, r))
@@ -98,7 +112,7 @@ namespace Sorted
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending))
+            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending, isSigned))
             {
                 Swap(ref keys, ref workspace, ref reversed);
             }
@@ -121,8 +135,11 @@ namespace Sorted
         }
 
         private static bool SortCore32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask,
-            int countLength, int len, Span<uint> countsOffsets, int groups, uint mask, bool ascending)
+            int countLength, int len, Span<uint> countsOffsets, int groups, uint mask, bool ascending, bool isSigned)
         {
+            if (ascending ? IsSorted(keys) : IsSortedDescending(keys)) return false;
+
+            int invertC = isSigned ? groups - 1 : -1;
             bool reversed = false;
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
@@ -139,7 +156,7 @@ namespace Sorted
                 else
                     BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask);
 
-                if (!ComputeOffsets(countsOffsets, len)) continue; // all in one group
+                if (!ComputeOffsets(countsOffsets, len, c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
 
                 if (ascending)
                     ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
@@ -150,10 +167,51 @@ namespace Sorted
             }
             return reversed;
         }
-        static bool ComputeOffsets(Span<uint> countsOffsets, int length)
+
+        internal static int GetInvertStartIndex(int width, int r)
+        {
+            // e.g. if width 32 and r 2, then: all bits useful, 4 groups, invert at 2
+            // if width 32 and r 3, then: 2 bits useful in final chunk, 8 groups, invert at 2
+            var mod = width % r;
+            return mod == 0 ? 1 << (r - 1) : 1 << (mod - 1);
+        }
+
+
+        private static bool IsSortedDescending(Span<uint> keys) => false;
+        //{
+        //    uint last = keys[0];
+        //    for (int i = 1; i < keys.Length; i++)
+        //    {
+        //        var val = keys[i];
+        //        if (val > last) return false;
+        //    }
+        //    return true;
+        //}
+
+        private static bool IsSorted(Span<uint> keys) => false;
+        //{
+        //    uint last = keys[0];
+        //    for (int i = 1; i < keys.Length; i++)
+        //    {
+        //        var val = keys[i];
+        //        if (val < last) return false;
+        //    }
+        //    return true;
+        //}
+
+        static bool ComputeOffsets(Span<uint> countsOffsets, int length, int bucketOffset)
         {
             uint offset = 0;
-            for (int i = 0; i < countsOffsets.Length; i++)
+            int bucketCount = countsOffsets.Length;
+            for (int i = bucketOffset; i < bucketCount; i++)
+            {
+                var prev = offset;
+                var grpCount = countsOffsets[i];
+                if (grpCount == length) return false;
+                offset += grpCount;
+                countsOffsets[i] = prev;
+            }
+            for (int i = 0; i < bucketOffset; i++)
             {
                 var prev = offset;
                 var grpCount = countsOffsets[i];

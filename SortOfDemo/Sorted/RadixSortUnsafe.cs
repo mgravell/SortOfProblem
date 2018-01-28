@@ -71,7 +71,7 @@ namespace Sorted
                 fixed (uint* k = &MemoryMarshal.GetReference(keys.NonPortableCast<T, uint>()))
                 fixed (uint* w = &MemoryMarshal.GetReference(workspace.NonPortableCast<T, uint>()))
                 {
-                    Sort32(RadixConverter.GetNonPassthru<T, uint>(), k, w, keys.Length, r, uint.MaxValue, !descending);
+                    Sort32(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out var isSigned), k, w, keys.Length, r, uint.MaxValue, !descending, isSigned);
                 }
             }
             else
@@ -80,7 +80,7 @@ namespace Sorted
             }
         }
         public static void Sort(uint* keys, uint* workspace, int length, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => Sort32(null, keys, workspace, length, r, mask, !descending);
+            => Sort32(null, keys, workspace, length, r, mask, !descending, false);
 
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
         {
@@ -90,7 +90,7 @@ namespace Sorted
             fixed (uint* k = &MemoryMarshal.GetReference(keys))
             fixed (uint* w = &MemoryMarshal.GetReference(workspace))
             {
-                Sort32(null, k, w, keys.Length, r, mask, !descending);
+                Sort32(null, k, w, keys.Length, r, mask, !descending, false);
             }
         }
 
@@ -110,7 +110,7 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
-        private static void Sort32(RadixConverter<uint> converter, uint* keys, uint* workspace, int len, int r, uint keyMask, bool ascending)
+        private static void Sort32(RadixConverter<uint> converter, uint* keys, uint* workspace, int len, int r, uint keyMask, bool ascending, bool isSigned)
         {
             if (len <= 1 || keyMask == 0) return;
 
@@ -124,33 +124,25 @@ namespace Sorted
             bool reversed = false;
             if (converter != null)
             {
-                if (converter is RadixConverterUnsafeInt32 rcu)
-                    rcu.ToRadix(keys, workspace, len);
-                else
-                    converter.ToRadix(new Span<uint>(keys, len), new Span<uint>(workspace, len));
+                converter.ToRadix(new Span<uint>(keys, len), new Span<uint>(workspace, len));
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending))
+            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending, isSigned))
             {
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
             if (converter != null)
             {
-                if (converter is RadixConverterUnsafeInt32 rcu)
-                    rcu.FromRadix(keys, reversed ? workspace : keys, len);
+                if (reversed)
+                {
+                    converter.FromRadix(new Span<uint>(keys, len), new Span<uint>(workspace, len));
+                }
                 else
                 {
-                    if (reversed)
-                    {
-                        converter.FromRadix(new Span<uint>(keys, len), new Span<uint>(workspace, len));
-                    }
-                    else
-                    {
-                        var s = new Span<uint>(keys, len);
-                        converter.FromRadix(s, s);
-                    }
+                    var s = new Span<uint>(keys, len);
+                    converter.FromRadix(s, s);
                 }
             }
             else if (reversed)
@@ -159,8 +151,9 @@ namespace Sorted
             }
         }
 
-        private static bool SortCore32(uint* keys, uint* workspace, int r, uint keyMask, int countLength, int len, uint* countsOffsets, int groups, uint mask, bool ascending)
+        private static bool SortCore32(uint* keys, uint* workspace, int r, uint keyMask, int countLength, int len, uint* countsOffsets, int groups, uint mask, bool ascending, bool isSigned)
         {
+            int invertC = isSigned ? groups - 1 : -1;
             bool reversed = false;
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
@@ -177,7 +170,7 @@ namespace Sorted
                 else
                     BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask, countLength);
 
-                if (!ComputeOffsets(countsOffsets, countLength, len)) continue; // all in one group
+                if (!ComputeOffsets(countsOffsets, countLength, len, c == invertC ? RadixSort.GetInvertStartIndex(32, r) : 0)) continue; // all in one group
 
                 if (ascending)
                     ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
@@ -189,16 +182,36 @@ namespace Sorted
             return reversed;
         }
 
-        static bool ComputeOffsets(uint* countsOffsets, int bucketCount, int length)
+        private static void InvertSignedOffsets(uint* offsets, int shift)
+        {
+            throw new NotImplementedException();
+        }
+
+        static bool ComputeOffsets(uint* countsOffsets, int bucketCount, int length, int bucketOffset)
         {
             uint offset = 0;
+            if(bucketOffset != 0)
+            {
+                int count = bucketCount - bucketOffset;
+                bucketCount -= count;
+                var ptr = countsOffsets + bucketOffset;
+                while(count-- != 0)
+                {
+                    var grpCount = *ptr;
+                    if (grpCount == length) return false;
+
+                    *ptr++ = offset;
+                    offset += grpCount;
+                }
+            }
+
             while (bucketCount-- != 0)
             {
-                var prev = offset;
                 var grpCount = *countsOffsets;
                 if (grpCount == length) return false;
-                offset += grpCount;
-                *countsOffsets++ = prev;
+
+                *countsOffsets++ = offset;
+                offset += grpCount;                
             }
             return true;
         }
