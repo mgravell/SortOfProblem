@@ -12,7 +12,7 @@ namespace Sorted
         }
         private sealed class RadixConverterSingle : RadixConverter<uint>
         {
-            internal override bool IsInbuilt => true;
+            // algo can cope with signed 1s/2s-complement
             public override bool IsSigned => true;
 
             public override void ToRadix(Span<uint> source, Span<uint> destination)
@@ -20,17 +20,18 @@ namespace Sorted
                 Identify();
                 unchecked
                 {
+                    // convert from IEEE754 MSB=sign to 1s-complement
                     for (int i = 0; i < source.Length; i++)
                     {
                         var val = source[i];
                         //if ((val & MSB32U) != 0)
-                        //{
+                        //{   // preserve MSB; invert other bits
                         //    val = (~val) | MSB32U;
                         //}
                         //destination[i] = val;
 
-                        // or: without any branches;
-                        var ifNeg = (uint)((int)val >> 31);
+                        // or: same thing without any branches;
+                        var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
                         destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
                     }
                 }
@@ -55,6 +56,8 @@ namespace Sorted
                     }
                 }
             }
+
+            internal override bool IsInbuilt => true;
         }
     }
 }
