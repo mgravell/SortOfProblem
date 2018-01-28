@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
@@ -33,7 +32,12 @@ namespace Sorted
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine(ex);
+                while (ex != null)
+                {
+                    Console.Error.WriteLine(ex);
+                    ex = ex.InnerException;
+                }
+
             }
 #endif
         }

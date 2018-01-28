@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Numerics;
-using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
@@ -9,39 +6,14 @@ namespace Sorted
     {
         static RadixConverter()
         {
-            Register<uint, uint>(RadixConverter<uint>.Null);
-            Register<int, uint>(new RadixConverterInt32());
+            Register<uint, uint>(RadixConverter<uint>.UnsignedInternal);
+            Register<int, uint>(RadixConverter<uint>.SignedInternal);
             Register<float, uint>(new RadixConverterSingle());
         }
-        private sealed class RadixConverterInt32 : RadixConverter<uint>.Inbuilt
+        private sealed class RadixConverterSingle : RadixConverter<uint>
         {
+            internal override bool IsInbuilt => true;
             public override bool IsSigned => true;
-            public override bool IsTrivialWhenSigned => true;
-            public override void ToRadix(Span<uint> source, Span<uint> destination)
-            {
-                Identify();
-                unchecked
-                {
-                    for (int i = 0; i < source.Length; i++)
-                        destination[i] = (uint)((int)source[i] - int.MinValue);
-                }
-            }
-            public override void FromRadix(Span<uint> source, Span<uint> destination)
-            {
-                Identify();
-                unchecked
-                {
-                    for (int i = 0; i < source.Length; i++)
-                        destination[i] = (uint)((int)source[i] + int.MinValue);       
-                }
-            }
-        }
-        private sealed class RadixConverterSingle : RadixConverter<uint>.Inbuilt
-        {
-            const uint MSB = 1U << 31; // IEEE first bit is the sign bit
-
-            //public override bool IsSigned => true;
-            //public override bool IsTrivialWhenSigned => true;
 
             public override void ToRadix(Span<uint> source, Span<uint> destination)
             {
@@ -51,13 +23,15 @@ namespace Sorted
                     for (int i = 0; i < source.Length; i++)
                     {
                         var val = source[i];
-                        if ((val & MSB) != 0)
-                        {
-                            // is negative; shoult interpret as -(the value without the MSB) - not the same as just
-                            // dropping the bit, since integer math is twos-complement
-                            val = (uint)(-((int)(val & ~MSB)));
-                        }
-                        destination[i] = val;
+                        //if ((val & MSB32U) != 0)
+                        //{
+                        //    val = (~val) | MSB32U;
+                        //}
+                        //destination[i] = val;
+
+                        // or: without any branches;
+                        var ifNeg = (uint)((int)val >> 31);
+                        destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
                     }
                 }
             }
@@ -69,11 +43,15 @@ namespace Sorted
                     for (int i = 0; i < source.Length; i++)
                     {
                         var val = source[i];
-                        if ((val & MSB) != 0)
-                        {
-                            val = ((uint)-val) | MSB;
-                        }
-                        destination[i] = val;
+                        //if ((val & MSB32U) != 0)
+                        //{
+                        //    val = (~val) | MSB32U;
+                        //}
+                        //destination[i] = val;
+
+                        // or: without any branches;
+                        var ifNeg = (uint)((int)val >> 31);
+                        destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
                     }
                 }
             }
