@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Numerics;
 
 namespace Sorted
 {
@@ -41,8 +42,41 @@ namespace Sorted
             }
 #endif
         }
+        
         static void Execute()
         {
+            var c = RadixConverter.Get<float, uint>();
+            Console.WriteLine($"signed: {c.IsSigned}; Vector: {Vector.IsHardwareAccelerated} / {Vector<uint>.Count}");
+            uint[] arr = new uint[Vector<uint>.Count], arr2 = new uint[arr.Length], arr3 = new uint[arr.Length];
+            arr[0] = int.MaxValue | (1U << 31);
+            arr[1] = 2 | (1U << 31);
+            arr[2] = 1 | (1U << 31);
+            arr[3] = 0 | (1U << 31);
+            arr[4] = 0;
+            arr[5] = 1;
+            arr[6] = 2;
+            arr[7] = int.MaxValue;
+            c.ToRadix(arr, arr2);
+            c.FromRadix(arr2, arr3);
+
+            for(int i = 0; i < 8; i++)
+            {
+                Console.WriteLine($"{i}: {arr[i]}, {arr2[i]}, {arr3[i]}");
+            }
+
+            //const int MSB = 1 << 31;
+            //var vMSB = new Vector<int>(MSB);
+            //var vMin = new Vector<int>(int.MinValue);
+            //for (int j = 0; j < vSource.Length; j++)
+            //{
+            //    var vec = vSource[j] + vMin;
+            //    vDest[j] = Vector.ConditionalSelect(
+            //        condition: Vector.LessThan(vec, Vector<int>.Zero),
+            //        left: -vec | vMSB, // when true
+            //        right: vec // when false
+            //    ) - vMin;
+            //}
+
             //var z = int.MinValue;
             //Console.WriteLine((uint)z);
             //var c = RadixConverter.Get<int, uint>();

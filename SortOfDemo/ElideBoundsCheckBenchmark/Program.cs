@@ -84,7 +84,7 @@ namespace ElideBoundsCheckBenchmark
                 _randomIndices[y] = tmp;
             }
         }
-        const int OpsPerInvoke = 1;
+        const int OpsPerInvoke = 2;
 
 
         [Benchmark(OperationsPerInvoke = OpsPerInvoke, Baseline = true)]
@@ -106,10 +106,10 @@ namespace ElideBoundsCheckBenchmark
             for (int i = 0; i < source.Length; i++)
             {
                 var val = source[i];
-                destination[i] = ((val & MSB) == 0 ? val : -(val & ~MSB)) - int.MinValue;
+                destination[i] = ((val & MSB) == 0 ? val : -(val & ~MSB) - 1)
+                    -int.MinValue;
             }
         }
-
 
         [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
         [BenchmarkCategory("radix")]
@@ -217,7 +217,10 @@ namespace ElideBoundsCheckBenchmark
             {
                 var val = source[i];
                 var ifNeg = val >> 31; // 11...11 or 00...00
-                destination[i] = ((ifNeg & (~val & ~MSB)) | val) - int.MinValue;
+                destination[i] = (
+                    (ifNeg & (-(val & ~MSB) - 1)) // true
+                    | (~ifNeg & val) // false
+                ) - int.MinValue;
             }
         }
 
@@ -243,13 +246,14 @@ namespace ElideBoundsCheckBenchmark
                 var vSource = source.NonPortableCast<int, Vector<int>>();
                 var vDest = destination.NonPortableCast<int, Vector<int>>();
                 var vMSB = new Vector<int>(MSB);
+                var vNOMSB = ~vMSB;
                 var vMin = new Vector<int>(int.MinValue);
                 for (int j = 0; j < vSource.Length; j++)
                 {
                     var vec = vSource[j];
                     vDest[j] = Vector.ConditionalSelect(
                         condition: Vector.LessThan(vec, Vector<int>.Zero),
-                        left: -(vec & ~vMSB), // when true
+                        left: -(vec & vNOMSB) - Vector<int>.One, // when true
                         right: vec // when false
                     ) - vMin;
                 }
@@ -261,7 +265,10 @@ namespace ElideBoundsCheckBenchmark
             {
                 var val = source[i];
                 var ifNeg = val >> 31; // 11...11 or 00...00
-                destination[i] = ((ifNeg & (~val & ~MSB)) | val) - int.MinValue;
+                destination[i] = (
+                    (ifNeg & (-(val & ~MSB) - 1)) // true
+                    | (~ifNeg & val) // false
+                ) - int.MinValue;
             }
         }
 
