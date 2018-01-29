@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
@@ -15,47 +17,54 @@ namespace Sorted
             // algo can cope with signed 1s/2s-complement
             public override bool IsSigned => true;
 
-            public override void ToRadix(Span<uint> source, Span<uint> destination)
+            static void InvertNegativesRetainingMSB(Span<uint> source, Span<uint> destination)
             {
-                Identify();
                 unchecked
                 {
                     // convert from IEEE754 MSB=sign to 1s-complement
-                    for (int i = 0; i < source.Length; i++)
+                    // "human" version:
+
+                    //if ((val & MSB32U) != 0)
+                    //{   // preserve MSB; invert other bits
+                    //    val = ~val | MSB32U;
+                    //}
+                    //destination[i] = val;
+
+                    int i = 0;
+                    if (Vector.IsHardwareAccelerated) // note the JIT removes this test
+                    {                               // (and all the code if it isn't true)
+                        var vSource = source.NonPortableCast<uint, Vector<uint>>();
+                        var vDest = destination.NonPortableCast<uint, Vector<uint>>();
+                        var MSB = new Vector<uint>(MSB32U);
+                        var NOMSB = ~MSB;
+                        for (int j = 0; j < vSource.Length; j++)
+                        {
+                            var vec = vSource[j];
+                            vDest[j] = Vector.ConditionalSelect(
+                                condition: Vector.GreaterThan(vec, NOMSB),
+                                left: ~vec | MSB, // when true
+                                right: vec // when false
+                            );
+                        }
+                        // change our root offset for the remainder of the values
+                        i = vSource.Length * Vector<uint>.Count;
+                    }
+
+                    for (; i < source.Length; i++)
                     {
                         var val = source[i];
-                        //if ((val & MSB32U) != 0)
-                        //{   // preserve MSB; invert other bits
-                        //    val = (~val) | MSB32U;
-                        //}
-                        //destination[i] = val;
-
-                        // or: same thing without any branches;
                         var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
                         destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
                     }
                 }
             }
-            public override void FromRadix(Span<uint> source, Span<uint> destination)
-            {
-                Identify();
-                unchecked
-                {
-                    for (int i = 0; i < source.Length; i++)
-                    {
-                        var val = source[i];
-                        //if ((val & MSB32U) != 0)
-                        //{
-                        //    val = (~val) | MSB32U;
-                        //}
-                        //destination[i] = val;
 
-                        // or: without any branches;
-                        var ifNeg = (uint)((int)val >> 31);
-                        destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
-                    }
-                }
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override void ToRadix(Span<uint> source, Span<uint> destination)
+                => InvertNegativesRetainingMSB(source, destination);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public override void FromRadix(Span<uint> source, Span<uint> destination)
+                => InvertNegativesRetainingMSB(source, destination);
 
             internal override bool IsInbuilt => true;
         }
