@@ -202,11 +202,11 @@ namespace Sorted
                     Parallel.Invoke(_workers);
                 }
             }
-            public Worker(RadixConverter<uint> converter, int batchSize, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
+            public Worker(RadixConverter<uint> converter, int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
             {
-                if (batchSize <= 0) throw new ArgumentOutOfRangeException(nameof(batchSize));
+                if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
                 if (keys.Length != workspace.Length) throw new ArgumentException("Workspace size mismatch", nameof(workspace));
-                _batchSize = batchSize;
+                _batchSize = ((keys.Length - 1) / workerCount) + 1;
                 _length = keys.Length;
                 _keys = keys;
                 _workspace = workspace;
@@ -214,7 +214,6 @@ namespace Sorted
                 _converter32 = converter;
                 _bucketCount = bucketCount;
 
-                int workerCount = WorkerCount(_length);
                 if (workerCount > 1)
                 {
                     Action exec = ExecuteImpl;
@@ -262,7 +261,7 @@ namespace Sorted
 
 
 
-            var worker = new Worker<T>(converter, len / workerCount, bucketCount, keys, workspace, workerCountsOffsets);
+            var worker = new Worker<T>(converter, workerCount, bucketCount, keys, workspace, workerCountsOffsets);
 
             bool reversed = false;
             if (converter != null)
