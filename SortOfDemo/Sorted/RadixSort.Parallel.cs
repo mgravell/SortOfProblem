@@ -2,17 +2,16 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Sorted
 {
     public static partial class RadixSort
     {
-        public static void ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
+        public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out bool isSigned),
+                return ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out bool isSigned),
                     keys, workspace,
                     r, descending, uint.MaxValue, isSigned);
             }
@@ -22,7 +21,7 @@ namespace Sorted
             }
         }
 
-        public static void ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
             => ParallelSort32<uint>(null, keys, workspace, r, descending, mask, false);
 
 
@@ -51,6 +50,12 @@ namespace Sorted
 
                     var end = Math.Min(_batchSize + start, _length);
                     Execute(step, batchIndex, start, end);
+                }
+
+                lock(this)
+                {
+                    if (--_outstandingWorkersNeedsSync == 0)
+                        Monitor.Pulse(this); // wake up the main thread
                 }
             }
 
@@ -117,7 +122,7 @@ namespace Sorted
                 }
                 return false;
             }
-            
+
             public bool ComputeOffsets(int bucketOffset)
             {
                 var allBuckets = _countsOffsets.Span.NonPortableCast<T, uint>();
@@ -176,32 +181,37 @@ namespace Sorted
                 }
             }
 
-            readonly int _batchSize, _length, _bucketCount;
+            readonly int _batchSize, _length, _bucketCount, _workerCount;
             readonly Memory<T> _countsOffsets;
             readonly RadixConverter<uint> _converter32;
-            readonly Action[] _workers;
 
             volatile WorkerStep _step;
             int _batchIndex, _shift;
             Memory<T> _keys, _workspace;
             uint _groupMask;
 
+            static readonly WaitCallback _executeImpl = state => ((Worker<T>)state).ExecuteImpl();
             public void Execute(WorkerStep step)
             {
                 lock (this)
                 {
-                    Interlocked.Exchange(ref _batchIndex, -1);
+                    Interlocked.Exchange(ref _batchIndex, -1); // -1 because Interlocked.Increment returns the *incremented* value
                     _step = step;
+                    if (_outstandingWorkersNeedsSync != 0) throw new InvalidOperationException("There are still outstanding workers!");
+                    _outstandingWorkersNeedsSync = _workerCount;
                 }
-                if (_workers == null)
+                for (int i = 1; i < _workerCount; i++) // the current thread will be worker 0
                 {
-                    ExecuteImpl();
+                    ThreadPool.QueueUserWorkItem(_executeImpl, this);
                 }
-                else
+                ExecuteImpl(); // lend a hand ourselves
+                lock (this)
                 {
-                    Parallel.Invoke(_workers);
+                    if (_outstandingWorkersNeedsSync != 0 && !Monitor.Wait(this, millisecondsTimeout: 10_000))
+                        throw new TimeoutException("Timeout waiting for parallel workers to complete");
                 }
             }
+            int _outstandingWorkersNeedsSync;
             public Worker(RadixConverter<uint> converter, int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
             {
                 if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
@@ -213,14 +223,7 @@ namespace Sorted
                 _countsOffsets = countsOffsets;
                 _converter32 = converter;
                 _bucketCount = bucketCount;
-
-                if (workerCount > 1)
-                {
-                    Action exec = ExecuteImpl;
-                    var workers = _workers = new Action[workerCount];
-                    for (int i = 0; i < workers.Length; i++)
-                        workers[i] = exec;
-                }
+                _workerCount = workerCount;
             }
 
             public void Swap() => RadixSort.Swap(ref _keys, ref _workspace);
@@ -242,10 +245,10 @@ namespace Sorted
             return Math.Min(((count - 1) / 1024) + 1, MaxWorkerCount);
         }
 
-        private static void ParallelSort32<T>(RadixConverter<uint> converter, Memory<T> keys, Memory<T> workspace,
+        private static int ParallelSort32<T>(RadixConverter<uint> converter, Memory<T> keys, Memory<T> workspace,
             int r, bool descending, uint keyMask, bool isSigned) where T : struct
         {
-            if (keys.Length <= 1 || keyMask == 0) return;
+            if (keys.Length <= 1 || keyMask == 0) return 0;
             if (workspace.Length < ParallelWorkspaceSize<uint>(keys.Length, r))
                 throw new ArgumentException($"The workspace provided is insufficient ({workspace.Length} vs {ParallelWorkspaceSize<uint>(keys.Length, r)} needed); the {nameof(ParallelWorkspaceSize)} method can be used to determine the minimum size required", nameof(workspace));
 
@@ -258,8 +261,6 @@ namespace Sorted
             workspace = workspace.Slice(countsOffsetsAsT * workerCount, len);
             int groups = GroupCount<uint>(r);
             uint mask = (uint)(bucketCount - 1);
-
-
 
             var worker = new Worker<T>(converter, workerCount, bucketCount, keys, workspace, workerCountsOffsets);
 
@@ -286,7 +287,7 @@ namespace Sorted
                 worker.SetGroup(groupMask, shift);
                 worker.Execute(descending ? WorkerStep.BucketCountDescending : WorkerStep.BucketCountAscending);
                 if (!worker.ComputeOffsets(c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
-                
+
                 worker.Execute(descending ? WorkerStep.ApplyDescending : WorkerStep.ApplyAscending);
                 worker.Swap();
                 reversed = !reversed;
@@ -300,6 +301,7 @@ namespace Sorted
             {
                 worker.Execute(WorkerStep.Copy);
             }
+            return workerCount;
         }
 
         public static int ParallelWorkspaceSize<T>(Span<T> keys, int r = DEFAULT_R) => ParallelWorkspaceSize<T>(keys.Length, r);
