@@ -14,10 +14,10 @@ namespace Sorted
         }
         private sealed class RadixConverterSingle : RadixConverter<uint>
         {
-            public override void ToRadix(Span<uint> signedSource, Span<uint> signedDestination)
+            public override void ToRadix(Span<uint> unsignedSource, Span<uint> unsignedDestination)
             {
-                var source = signedSource.NonPortableCast<uint, int>();
-                var destination = signedDestination.NonPortableCast<uint, int>();
+                var source = unsignedSource.NonPortableCast<uint, int>();
+                var destination = unsignedDestination.NonPortableCast<uint, int>();
 
                 const int MSB = 1 << 31;
                 int i = 0;
@@ -52,10 +52,10 @@ namespace Sorted
                 }
             }
 
-            public override void FromRadix(Span<uint> signedSource, Span<uint> signedDestination)
+            public override void FromRadix(Span<uint> unsignedSource, Span<uint> unsignedDestination)
             {
-                var source = signedSource.NonPortableCast<uint, int>();
-                var destination = signedDestination.NonPortableCast<uint, int>();
+                var source = unsignedSource.NonPortableCast<uint, int>();
+                var destination = unsignedDestination.NonPortableCast<uint, int>();
 
                 const int MSB = 1 << 31;
                 int i = 0;
