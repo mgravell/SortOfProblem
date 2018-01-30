@@ -48,17 +48,18 @@ namespace ElideBoundsCheckBenchmark
     [CategoriesColumn]
     public class PerformanceTests
     {
-        readonly int[] _values, _randomIndices;
+        readonly int[] _values, _randomIndices, _workspaceI;
 
         readonly uint[] _workspace;
         readonly float[] _randomSingles;
         public PerformanceTests()
         {
-            const int LENGTH = 1024 * 1024;
+            const int LENGTH = 2000000;
             _values = new int[LENGTH];
             _randomIndices = new int[LENGTH];
             _randomSingles = new float[LENGTH];
             _workspace = new uint[LENGTH];
+            _workspaceI = new int[LENGTH];
             LowerInclusive = 0;
             UpperExclusive = LENGTH;
             var rand = new Random(LENGTH);
@@ -86,191 +87,372 @@ namespace ElideBoundsCheckBenchmark
         }
         const int OpsPerInvoke = 2;
 
-
         [Benchmark(OperationsPerInvoke = OpsPerInvoke, Baseline = true)]
-        [BenchmarkCategory("radix")]
-        public void SingleToUnsignedRadixBasic()
+        public void SortablePerValue()
         {
-            Span<int> sourceInt32 = new Span<float>(_randomSingles).NonPortableCast<float, int>(),
-                destinationInt32 = new Span<uint>(_workspace).NonPortableCast<uint, int>();
+            var values = _randomSingles;
+            var workspace = _workspace;
 
-            for (int i = 0; i < OpsPerInvoke; i++)
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
             {
-                ToUnsignedRadixBasic(sourceInt32, destinationInt32);
-            }
-        }
-
-        private void ToUnsignedRadixBasic(Span<int> source, Span<int> destination)
-        {
-            const int MSB = 1 << 31;
-            for (int i = 0; i < source.Length; i++)
-            {
-                var val = source[i];
-                destination[i] = ((val & MSB) == 0 ? val : -(val & ~MSB) - 1)
-                    -int.MinValue;
-            }
-        }
-
-        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("radix")]
-        public void SingleToSignedRadixBasic()
-        {
-            Span<uint> sourceUInt32 = new Span<float>(_randomSingles).NonPortableCast<float, uint>(),
-                destinationUInt32 = new Span<uint>(_workspace);
-
-            for (int i = 0; i < OpsPerInvoke; i++)
-            {
-                ToSignedRadixBasic(sourceUInt32, destinationUInt32);
-            }
-        }
-        const uint MSB32U = 1U << 31;
-
-        private void ToSignedRadixBasic(Span<uint> source, Span<uint> destination)
-        {
-            for (int i = 0; i < source.Length; i++)
-            {
-                var val = source[i];
-                destination[i] = (val & MSB32U) == 0 ? val : ~val | MSB32U;
-            }
-        }
-
-        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("radix")]
-        public void SingleToSignedRadixNoBranching()
-        {
-            Span<uint> sourceUInt32 = new Span<float>(_randomSingles).NonPortableCast<float, uint>(),
-                destinationUInt32 = new Span<uint>(_workspace);
-
-            for (int i = 0; i < OpsPerInvoke; i++)
-            {
-                ToSignedRadixNoBranching(sourceUInt32, destinationUInt32);
-            }
-        }
-        private void ToSignedRadixNoBranching(Span<uint> source, Span<uint> destination)
-        {
-            for (int i = 0; i < source.Length; i++)
-            {
-                var val = source[i];
-                var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
-                destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
-            }
-        }
-
-        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("radix")]
-        public void SingleToSignedRadixVectorized()
-        {
-            Span<uint> sourceUInt32 = new Span<float>(_randomSingles).NonPortableCast<float, uint>(),
-                destinationUInt32 = new Span<uint>(_workspace);
-
-            for (int i = 0; i < OpsPerInvoke; i++)
-            {
-                ToSignedRadixVectorized(sourceUInt32, destinationUInt32);
-            }
-        }
-        private void ToSignedRadixVectorized(Span<uint> source, Span<uint> destination)
-        {
-            int i = 0;
-            if (Vector.IsHardwareAccelerated) // note the JIT removes this test
-            {                               // (and all the code if it isn't true)
-                var vSource = source.NonPortableCast<uint, Vector<uint>>();
-                var vDest = destination.NonPortableCast<uint, Vector<uint>>();
-                var MSB = new Vector<uint>(MSB32U);
-                var NOMSB = ~MSB;
-                for (int j = 0; j < vSource.Length; j++)
+                for (int i = 0; i < values.Length; i++)
                 {
-                    var vec = vSource[j];
-                    vDest[j] = Vector.ConditionalSelect(
-                        condition: Vector.GreaterThan(vec, NOMSB),
-                        left: ~vec | MSB, // when true
-                        right: vec // when false
-                    );
+                    workspace[i] = Sortable(values[i]);
                 }
-                // change our root offset for the remainder of the values
-                i = vSource.Length * Vector<uint>.Count;
-            }
-            for (; i < source.Length; i++)
-            {
-                var val = source[i];
-                var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
-                destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
             }
         }
 
         [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("radix")]
-        public void SingleToUnsignedRadixNoBranching()
+        public void ToRadixPerValue()
         {
-            Span<int> sourceInt32 = new Span<float>(_randomSingles).NonPortableCast<float, int>(),
-                destinationInt32 = new Span<uint>(_workspace).NonPortableCast<uint, int>();
+            var values = _randomSingles;
+            var workspace = _workspaceI;
 
-            for (int i = 0; i < OpsPerInvoke; i++)
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
             {
-                ToUnsignedRadixNoBranching(sourceInt32, destinationInt32);
-            }
-        }
-
-        private void ToUnsignedRadixNoBranching(Span<int> source, Span<int> destination)
-        {
-            const int MSB = 1 << 31;
-            for (int i = 0; i < source.Length; i++)
-            {
-                var val = source[i];
-                var ifNeg = val >> 31; // 11...11 or 00...00
-                destination[i] = (
-                    (ifNeg & (-(val & ~MSB) - 1)) // true
-                    | (~ifNeg & val) // false
-                ) - int.MinValue;
-            }
-        }
-
-        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
-        [BenchmarkCategory("radix")]
-        public void SingleToUnsignedRadixVectorized()
-        {
-            Span<int> sourceInt32 = new Span<float>(_randomSingles).NonPortableCast<float, int>(),
-                destinationInt32 = new Span<uint>(_workspace).NonPortableCast<uint, int>();
-
-            for (int i = 0; i < OpsPerInvoke; i++)
-            {
-                ToUnsignedRadixVectorized(sourceInt32, destinationInt32);
-            }
-        }
-
-        private void ToUnsignedRadixVectorized(Span<int> source, Span<int> destination)
-        {
-            const int MSB = 1 << 31;
-            int i = 0;
-            if (Vector.IsHardwareAccelerated) // note the JIT removes this test
-            {                               // (and all the code if it isn't true)
-                var vSource = source.NonPortableCast<int, Vector<int>>();
-                var vDest = destination.NonPortableCast<int, Vector<int>>();
-                var vMSB = new Vector<int>(MSB);
-                var vNOMSB = ~vMSB;
-                var vMin = new Vector<int>(int.MinValue);
-                for (int j = 0; j < vSource.Length; j++)
+                for (int i = 0; i < values.Length; i++)
                 {
-                    var vec = vSource[j];
-                    vDest[j] = Vector.ConditionalSelect(
-                        condition: Vector.LessThan(vec, Vector<int>.Zero),
-                        left: -(vec & vNOMSB) - Vector<int>.One, // when true
-                        right: vec // when false
-                    ) - vMin;
+                    workspace[i] = ToRadix(values[i]);
                 }
-                // change our root offset for the remainder of the values
-                i = vSource.Length * Vector<int>.Count;
-            }
-
-            for (; i < source.Length; i++)
-            {
-                var val = source[i];
-                var ifNeg = val >> 31; // 11...11 or 00...00
-                destination[i] = (
-                    (ifNeg & (-(val & ~MSB) - 1)) // true
-                    | (~ifNeg & val) // false
-                ) - int.MinValue;
             }
         }
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void ToRadixBlock()
+        {
+            float[] values = _randomSingles;
+            int[] radix = _workspaceI;
+            SomeHelperBase<float,int> someHelper = new SomeHelper();
+
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                someHelper.ToRadix(values, radix);
+            }
+        }
+
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void ToRadixSpan() => ViaBlockHelper<SimpleBlockHelper>();
+
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void Branchless() => ViaBlockHelper<BranchlessBlockHelper>();
+
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void Vectorized() => ViaBlockHelper<VectorizedBlockHelper>();
+
+        void ViaBlockHelper<T>() where T : SomeBlockHelperBase, new ()
+        {
+            Span<float> typedSource = _randomSingles;
+            Span<uint> workspace = _workspace;
+            var source = typedSource.NonPortableCast<float, uint>();
+            SomeBlockHelperBase converter = new T();
+
+            for (int loop = 0; loop < OpsPerInvoke; loop++)
+            {
+                converter?.ToRadix(source, workspace);
+            }
+        }
+
+        abstract class SomeHelperBase<TFrom, TTo>
+        {
+            public abstract void ToRadix(TFrom[] values, TTo[] radix);
+        }
+        sealed class SomeHelper : SomeHelperBase<float,int>
+        {
+            public override unsafe void ToRadix(float[] source, int[] destination)
+            {
+                const int MSB = 1 << 31;
+                for (int i = 0; i < source.Length; i++)
+                {
+                    var val = source[i];
+                    int raw = *(int*)(&val);
+                    // if sign bit set: flip all bits except the MSB
+                    destination[i] = (raw & MSB) == 0 ? raw : ~raw | MSB;
+                }
+            }
+        }
+
+        abstract class SomeBlockHelperBase
+        {
+            public abstract void ToRadix(Span<uint> values, Span<uint> destination);
+        }
+        sealed class SimpleBlockHelper : SomeBlockHelperBase
+        {
+            public override void ToRadix(Span<uint> values, Span<uint> destination)
+            {
+                const uint MSB = 1U << 31;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    uint raw = values[i];
+                    destination[i] = (raw & MSB) == 0 ? raw : ~raw | MSB;
+                }
+            }
+        }
+
+        sealed class BranchlessBlockHelper : SomeBlockHelperBase
+        {
+            public override void ToRadix(Span<uint> values, Span<uint> destination)
+            {
+                const uint MSB = 1U << 31;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    uint raw = values[i];
+                    var ifNeg = (uint)(((int)raw) >> 31);
+                    destination[i] =
+                        (ifNeg & (~raw | MSB)) // true
+                        | (~ifNeg & raw);      // false
+                }
+            }
+        }
+
+        sealed class VectorizedBlockHelper : SomeBlockHelperBase
+        {
+            public override void ToRadix(Span<uint> values, Span<uint> destination)
+            {
+                const uint MSB = 1U << 31;
+
+                int i = 0;
+                if (Vector.IsHardwareAccelerated)
+                {
+                    var vSource = values.NonPortableCast<uint, Vector<uint>>();
+                    var vDest = destination.NonPortableCast<uint, Vector<uint>>();
+
+                    var vMSB = new Vector<uint>(MSB);
+                    var vNOMSB = ~vMSB;
+                    for (int j = 0; j < vSource.Length; j++)
+                    {
+                        var vec = vSource[j];
+                        vDest[j] = Vector.ConditionalSelect(
+                            condition: Vector.GreaterThan(vec, vNOMSB),
+                            left: ~vec | vMSB, // when true
+                            right: vec // when false
+                        );
+                    }
+
+                    // change our root offset for the remainder of the values
+                    i = vSource.Length * Vector<uint>.Count;
+                }
+                for (; i < values.Length; i++)
+                {
+                    uint raw = values[i];
+                    var ifNeg = (uint)(((int)raw) >> 31);
+                    destination[i] =
+                        (ifNeg & (~raw | MSB)) // true
+                        | (~ifNeg & raw);      // false
+                }
+            }
+        }
+
+        unsafe int ToRadix(float value)
+        {
+            const int MSB = 1 << 31;
+            int raw = *(int*)(&value);
+            // if sign bit set: flip all bits except the MSB
+            return (raw & MSB) == 0 ? raw : ~raw | MSB;
+        }
+
+        uint Sortable(int value)
+        {
+            // re-base eveything upwards, so anything
+            // that was the min-value is now 0, etc
+            var val = unchecked((uint)(value - int.MinValue));
+            return val;
+        }
+        unsafe uint Sortable(float value)
+        {
+            const int MSB = 1 << 31;
+            int raw = *(int*)(&value);
+            if ((raw & MSB) != 0) // IEEE first bit is the sign bit
+            {
+                // is negative; shoult interpret as -(the value without the MSB) - not the same as just
+                // dropping the bit, since integer math is twos-complement
+                raw = -(raw & ~MSB);
+            }
+            return Sortable(raw);
+        }
+
+        //[Benchmark(OperationsPerInvoke = OpsPerInvoke, Baseline = true)]
+        //[BenchmarkCategory("radix")]
+        //public void SingleToUnsignedRadixBasic()
+        //{
+        //    Span<int> sourceInt32 = new Span<float>(_randomSingles).NonPortableCast<float, int>(),
+        //        destinationInt32 = new Span<uint>(_workspace).NonPortableCast<uint, int>();
+
+        //    for (int i = 0; i < OpsPerInvoke; i++)
+        //    {
+        //        ToUnsignedRadixBasic(sourceInt32, destinationInt32);
+        //    }
+        //}
+
+        //private void ToUnsignedRadixBasic(Span<int> source, Span<int> destination)
+        //{
+        //    const int MSB = 1 << 31;
+        //    for (int i = 0; i < source.Length; i++)
+        //    {
+        //        var val = source[i];
+        //        destination[i] = ((val & MSB) == 0 ? val : -(val & ~MSB) - 1)
+        //            -int.MinValue;
+        //    }
+        //}
+
+        //[Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        //[BenchmarkCategory("radix")]
+        //public void SingleToSignedRadixBasic()
+        //{
+        //    Span<uint> sourceUInt32 = new Span<float>(_randomSingles).NonPortableCast<float, uint>(),
+        //        destinationUInt32 = new Span<uint>(_workspace);
+
+        //    for (int i = 0; i < OpsPerInvoke; i++)
+        //    {
+        //        ToSignedRadixBasic(sourceUInt32, destinationUInt32);
+        //    }
+        //}
+        //const uint MSB32U = 1U << 31;
+
+        //private void ToSignedRadixBasic(Span<uint> source, Span<uint> destination)
+        //{
+        //    for (int i = 0; i < source.Length; i++)
+        //    {
+        //        var val = source[i];
+        //        destination[i] = (val & MSB32U) == 0 ? val : ~val | MSB32U;
+        //    }
+        //}
+
+        //[Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        //[BenchmarkCategory("radix")]
+        //public void SingleToSignedRadixNoBranching()
+        //{
+        //    Span<uint> sourceUInt32 = new Span<float>(_randomSingles).NonPortableCast<float, uint>(),
+        //        destinationUInt32 = new Span<uint>(_workspace);
+
+        //    for (int i = 0; i < OpsPerInvoke; i++)
+        //    {
+        //        ToSignedRadixNoBranching(sourceUInt32, destinationUInt32);
+        //    }
+        //}
+        //private void ToSignedRadixNoBranching(Span<uint> source, Span<uint> destination)
+        //{
+        //    for (int i = 0; i < source.Length; i++)
+        //    {
+        //        var val = source[i];
+        //        var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
+        //        destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
+        //    }
+        //}
+
+        //[Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        //[BenchmarkCategory("radix")]
+        //public void SingleToSignedRadixVectorized()
+        //{
+        //    Span<uint> sourceUInt32 = new Span<float>(_randomSingles).NonPortableCast<float, uint>(),
+        //        destinationUInt32 = new Span<uint>(_workspace);
+
+        //    for (int i = 0; i < OpsPerInvoke; i++)
+        //    {
+        //        ToSignedRadixVectorized(sourceUInt32, destinationUInt32);
+        //    }
+        //}
+        //private void ToSignedRadixVectorized(Span<uint> source, Span<uint> destination)
+        //{
+        //    int i = 0;
+        //    if (Vector.IsHardwareAccelerated) // note the JIT removes this test
+        //    {                               // (and all the code if it isn't true)
+        //        var vSource = source.NonPortableCast<uint, Vector<uint>>();
+        //        var vDest = destination.NonPortableCast<uint, Vector<uint>>();
+        //        var MSB = new Vector<uint>(MSB32U);
+        //        var NOMSB = ~MSB;
+        //        for (int j = 0; j < vSource.Length; j++)
+        //        {
+        //            var vec = vSource[j];
+        //            vDest[j] = Vector.ConditionalSelect(
+        //                condition: Vector.GreaterThan(vec, NOMSB),
+        //                left: ~vec | MSB, // when true
+        //                right: vec // when false
+        //            );
+        //        }
+        //        // change our root offset for the remainder of the values
+        //        i = vSource.Length * Vector<uint>.Count;
+        //    }
+        //    for (; i < source.Length; i++)
+        //    {
+        //        var val = source[i];
+        //        var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
+        //        destination[i] = (ifNeg & (~val | MSB32U)) | (~ifNeg & val);
+        //    }
+        //}
+
+        //[Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        //[BenchmarkCategory("radix")]
+        //public void SingleToUnsignedRadixNoBranching()
+        //{
+        //    Span<int> sourceInt32 = new Span<float>(_randomSingles).NonPortableCast<float, int>(),
+        //        destinationInt32 = new Span<uint>(_workspace).NonPortableCast<uint, int>();
+
+        //    for (int i = 0; i < OpsPerInvoke; i++)
+        //    {
+        //        ToUnsignedRadixNoBranching(sourceInt32, destinationInt32);
+        //    }
+        //}
+
+        //private void ToUnsignedRadixNoBranching(Span<int> source, Span<int> destination)
+        //{
+        //    const int MSB = 1 << 31;
+        //    for (int i = 0; i < source.Length; i++)
+        //    {
+        //        var val = source[i];
+        //        var ifNeg = val >> 31; // 11...11 or 00...00
+        //        destination[i] = (
+        //            (ifNeg & (-(val & ~MSB) - 1)) // true
+        //            | (~ifNeg & val) // false
+        //        ) - int.MinValue;
+        //    }
+        //}
+
+        //[Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        //[BenchmarkCategory("radix")]
+        //public void SingleToUnsignedRadixVectorized()
+        //{
+        //    Span<int> sourceInt32 = new Span<float>(_randomSingles).NonPortableCast<float, int>(),
+        //        destinationInt32 = new Span<uint>(_workspace).NonPortableCast<uint, int>();
+
+        //    for (int i = 0; i < OpsPerInvoke; i++)
+        //    {
+        //        ToUnsignedRadixVectorized(sourceInt32, destinationInt32);
+        //    }
+        //}
+
+        //private void ToUnsignedRadixVectorized(Span<int> source, Span<int> destination)
+        //{
+        //    const int MSB = 1 << 31;
+        //    int i = 0;
+        //    if (Vector.IsHardwareAccelerated) // note the JIT removes this test
+        //    {                               // (and all the code if it isn't true)
+        //        var vSource = source.NonPortableCast<int, Vector<int>>();
+        //        var vDest = destination.NonPortableCast<int, Vector<int>>();
+        //        var vMSB = new Vector<int>(MSB);
+        //        var vNOMSB = ~vMSB;
+        //        var vMin = new Vector<int>(int.MinValue);
+        //        for (int j = 0; j < vSource.Length; j++)
+        //        {
+        //            var vec = vSource[j];
+        //            vDest[j] = Vector.ConditionalSelect(
+        //                condition: Vector.LessThan(vec, Vector<int>.Zero),
+        //                left: -(vec & vNOMSB) - Vector<int>.One, // when true
+        //                right: vec // when false
+        //            ) - vMin;
+        //        }
+        //        // change our root offset for the remainder of the values
+        //        i = vSource.Length * Vector<int>.Count;
+        //    }
+
+        //    for (; i < source.Length; i++)
+        //    {
+        //        var val = source[i];
+        //        var ifNeg = val >> 31; // 11...11 or 00...00
+        //        destination[i] = (
+        //            (ifNeg & (-(val & ~MSB) - 1)) // true
+        //            | (~ifNeg & val) // false
+        //        ) - int.MinValue;
+        //    }
+        //}
 
 #if ELIDE
         [Benchmark(Description = "array [0,len)", OperationsPerInvoke = OpsPerInvoke)]
