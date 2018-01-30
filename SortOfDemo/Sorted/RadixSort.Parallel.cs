@@ -11,9 +11,9 @@ namespace Sorted
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                return ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out bool isSigned),
+                return ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out var numberSystem),
                     keys, workspace,
-                    r, descending, uint.MaxValue, isSigned);
+                    r, descending, uint.MaxValue, numberSystem);
             }
             else
             {
@@ -22,7 +22,7 @@ namespace Sorted
         }
 
         public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => ParallelSort32<uint>(null, keys, workspace, r, descending, mask, false);
+            => ParallelSort32<uint>(null, keys, workspace, r, descending, mask, NumberSystem.Unsigned);
 
 
         enum WorkerStep
@@ -246,7 +246,7 @@ namespace Sorted
         }
 
         private static int ParallelSort32<T>(RadixConverter<uint> converter, Memory<T> keys, Memory<T> workspace,
-            int r, bool descending, uint keyMask, bool isSigned) where T : struct
+            int r, bool descending, uint keyMask, NumberSystem numberSystem) where T : struct
         {
             if (keys.Length <= 1 || keyMask == 0) return 0;
             if (workspace.Length < ParallelWorkspaceSize<uint>(keys.Length, r))
@@ -272,7 +272,7 @@ namespace Sorted
                 reversed = !reversed;
             }
 
-            int invertC = isSigned ? groups - 1 : -1;
+            int invertC = numberSystem != NumberSystem.Unsigned ? groups - 1 : -1;
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
                 uint groupMask = (keyMask >> shift) & mask;

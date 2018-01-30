@@ -46,7 +46,7 @@ namespace Sorted
         static void Execute()
         {
             var c = RadixConverter.Get<float, uint>();
-            Console.WriteLine($"signed: {c.IsSigned}; Vector: {Vector.IsHardwareAccelerated} / {Vector<uint>.Count}");
+            Console.WriteLine($"number system: {c.NumberSystem}; Vector: {Vector.IsHardwareAccelerated} / {Vector<uint>.Count}");
             uint[] arr = new uint[Vector<uint>.Count], arr2 = new uint[arr.Length], arr3 = new uint[arr.Length];
             arr[0] = int.MaxValue | (1U << 31);
             arr[1] = 2 | (1U << 31);

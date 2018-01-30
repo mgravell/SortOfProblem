@@ -52,10 +52,10 @@ namespace Sorted
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                Sort32(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out bool isSigned),
+                Sort32(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out var numberSystem),
                     keys.NonPortableCast<T, uint>(),
                     workspace.NonPortableCast<T, uint>(),
-                    r, uint.MaxValue, !descending, isSigned);
+                    r, uint.MaxValue, !descending, numberSystem);
             }
             else
             {
@@ -67,10 +67,10 @@ namespace Sorted
         {
             int workspaceSize = WorkspaceSize(keys, r);
             uint* workspace = stackalloc uint[workspaceSize];
-            Sort32(null, keys, new Span<uint>(workspace, workspaceSize), r, mask, !descending, false);
+            Sort32(null, keys, new Span<uint>(workspace, workspaceSize), r, mask, !descending, NumberSystem.Unsigned);
         }
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => Sort32(null, keys, workspace, r, mask, !descending, false);
+            => Sort32(null, keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
 
         static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
         {
@@ -93,7 +93,7 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
-        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, bool isSigned)
+        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
             if (keys.Length <= 1 || keyMask == 0) return;
             if (workspace.Length < WorkspaceSize<uint>(keys.Length, r))
@@ -112,7 +112,7 @@ namespace Sorted
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending, isSigned))
+            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned))
             {
                 Swap(ref keys, ref workspace, ref reversed);
             }

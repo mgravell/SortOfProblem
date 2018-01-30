@@ -8,8 +8,8 @@ namespace Sorted
     {
         static RadixConverter()
         {
-            Register<uint, uint>(RadixConverter<uint>.UnsignedInternal);
-            Register<int, uint>(RadixConverter<uint>.SignedInternal);
+            Register<uint, uint>(RadixConverter<uint>.UnsignedInbuilt);
+            Register<int, uint>(RadixConverter<uint>.TwosComplementInbuilt);
             Register<float, uint>(new RadixConverterSingle());
         }
         private sealed class RadixConverterSingle : RadixConverter<uint>
@@ -63,8 +63,7 @@ namespace Sorted
             public override void FromRadix(Span<uint> source, Span<uint> destination)
                 => InvertNegativesRetainingMSB(source, destination);
 
-            // algo can cope with signed 1s/2s-complement
-            public override bool IsSigned => true;
+            public override NumberSystem NumberSystem => NumberSystem.OnesComplement; 
 
             internal override bool IsInbuilt => true;
         }
