@@ -189,7 +189,7 @@ namespace ElideBoundsCheckBenchmark
                 // change our root offset for the remainder of the values
                 i = vSource.Length * Vector<uint>.Count;
             }
-            for (i = 0; i < source.Length; i++)
+            for (; i < source.Length; i++)
             {
                 var val = source[i];
                 var ifNeg = (uint)((int)val >> 31); // 11...11 or 00...00
