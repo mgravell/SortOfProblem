@@ -99,9 +99,9 @@ namespace Sorted
             if (workspace.Length < WorkspaceSize<uint>(keys.Length, r))
                 throw new ArgumentException($"The workspace provided is insufficient ({workspace.Length} vs {WorkspaceSize<uint>(keys.Length, r)} needed); the {nameof(WorkspaceSize)} method can be used to determine the minimum size required", nameof(workspace));
 
-            int countLength = 1 << r, len = keys.Length;
+            int countLength = 1 << r;
             var countsOffsets = workspace.Slice(0, countLength);
-            workspace = workspace.Slice(countLength, len);
+            workspace = workspace.Slice(countLength, keys.Length);
             int groups = GroupCount<uint>(r);
             uint mask = (uint)(countLength - 1);
 
@@ -112,7 +112,37 @@ namespace Sorted
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned))
+            if ((keyMask & RadixConverter.MSB32U) == 0) numberSystem = NumberSystem.Unsigned; // without the MSB, sign doesn't matter
+            if (numberSystem == NumberSystem.SignBit)
+            {
+                // sort *just* on the MSB
+                var split = SortCore32(keys, workspace, 1, RadixConverter.MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
+                if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                keyMask &= ~RadixConverter.MSB32;
+
+                // now sort the two chunks separately, respecting the corresponding data/workspace areas
+                // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
+                var lower = split.Split == 0 ? default : SortCore32(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
+                var upper = split.Split == keys.Length ? default : SortCore32(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
+
+                if (lower.Reversed == upper.Reversed)
+                { // both or neither reversed
+                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                }
+                else if (split.Split < (keys.Length / 2)) // lower group is smaller
+                {
+                    if(split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
+                    // the lower-half is now in both spaces; respect the opinion of the upper-half 
+                    if (upper.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                }
+                else // upper group is smaller
+                {
+                    if(split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
+                    // the upper-half is now in both spaces; respect the opinion of the lower-half 
+                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                }
+            }
+            else if (SortCore32(keys, workspace, r, keyMask, countLength, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned).Reversed)
             {
                 Swap(ref keys, ref workspace, ref reversed);
             }
@@ -134,14 +164,16 @@ namespace Sorted
             }
         }
 
-        private static bool SortCore32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask,
-            int countLength, int len, Span<uint> countsOffsets, int groups, uint mask, bool ascending, bool isSigned)
+        private static (bool Reversed, int Split) SortCore32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask,
+            int countLength, Span<uint> countsOffsets, int groups, uint mask, bool ascending, bool isSigned,
+            int c = 0)
         {
-            if (ascending ? IsSorted(keys) : IsSortedDescending(keys)) return false;
-
+            if (keys.IsEmpty) return default;
+            int len = keys.Length;
             int invertC = isSigned ? groups - 1 : -1;
             bool reversed = false;
-            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            int split = 0;
+            for (int shift = c * r; c < groups; c++, shift += r)
             {
                 uint groupMask = (keyMask >> shift) & mask;
                 keyMask &= ~(mask << shift); // remove those bits from the keyMask to allow fast exit
@@ -156,7 +188,13 @@ namespace Sorted
                 else
                     BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask);
 
+                // the "split" is a trick used to sort IEEE754; tells us how many positive/negative
+                // numbers we have (since we do a cheeky split on r=1/c=31); this allows us to to
+                // two *inner* radix sorts on the rest of the bits
+                split = (int)countsOffsets[1];
+
                 if (!ComputeOffsets(countsOffsets, len, c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
+                
 
                 if (ascending)
                     ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
@@ -165,7 +203,7 @@ namespace Sorted
 
                 Swap(ref keys, ref workspace, ref reversed);
             }
-            return reversed;
+            return (reversed, split);
         }
 
         internal static int GetInvertStartIndex(int width, int r)
@@ -175,29 +213,6 @@ namespace Sorted
             var mod = width % r;
             return mod == 0 ? 1 << (r - 1) : 1 << (mod - 1);
         }
-
-
-        private static bool IsSortedDescending(Span<uint> keys) => false;
-        //{
-        //    uint last = keys[0];
-        //    for (int i = 1; i < keys.Length; i++)
-        //    {
-        //        var val = keys[i];
-        //        if (val > last) return false;
-        //    }
-        //    return true;
-        //}
-
-        private static bool IsSorted(Span<uint> keys) => false;
-        //{
-        //    uint last = keys[0];
-        //    for (int i = 1; i < keys.Length; i++)
-        //    {
-        //        var val = keys[i];
-        //        if (val < last) return false;
-        //    }
-        //    return true;
-        //}
 
         static bool ComputeOffsets(Span<uint> countsOffsets, int length, int bucketOffset)
         {

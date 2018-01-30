@@ -42,27 +42,9 @@ namespace Sorted
             }
 #endif
         }
-        
+
         static void Execute()
         {
-            var c = RadixConverter.Get<float, uint>();
-            Console.WriteLine($"number system: {c.NumberSystem}; Vector: {Vector.IsHardwareAccelerated} / {Vector<uint>.Count}");
-            uint[] arr = new uint[Vector<uint>.Count], arr2 = new uint[arr.Length], arr3 = new uint[arr.Length];
-            arr[0] = int.MaxValue | (1U << 31);
-            arr[1] = 2 | (1U << 31);
-            arr[2] = 1 | (1U << 31);
-            arr[3] = 0 | (1U << 31);
-            arr[4] = 0;
-            arr[5] = 1;
-            arr[6] = 2;
-            arr[7] = int.MaxValue;
-            c.ToRadix(arr, arr2);
-            c.FromRadix(arr2, arr3);
-
-            for(int i = 0; i < 8; i++)
-            {
-                Console.WriteLine($"{i}: {arr[i]}, {arr2[i]}, {arr3[i]}");
-            }
 
             //const int MSB = 1 << 31;
             //var vMSB = new Vector<int>(MSB);
@@ -133,44 +115,44 @@ namespace Sorted
                 }
                 CheckSortDescending<float>(valsFloat);
             }
-            for (int i = 0; i < LOOP; i++)
-            {
-                origFloat.CopyTo(valsFloat, 0);
-                using (new BasicTimer("RadixSort.ParallelSort"))
-                {
-                    var workers = RadixSort.ParallelSort<float>(valsFloat, wFloat);
-                    Console.Write($" using {workers} worker(s)");
-                }
-                CheckSort<float>(valsFloat);
-            }
-            for (int i = 0; i < LOOP; i++)
-            {
-                origFloat.CopyTo(valsFloat, 0);
-                using (new BasicTimer("RadixSort.ParallelSort/descending"))
-                {
-                    var workers = RadixSort.ParallelSort<float>(valsFloat, wFloat, descending: true);
-                    Console.Write($" using {workers} worker(s)");
-                }
-                CheckSortDescending<float>(valsFloat);
-            }
-            for (int i = 0; i < LOOP; i++)
-            {
-                origFloat.CopyTo(valsFloat, 0);
-                using (new BasicTimer("RadixSortUnsafe.Sort"))
-                {
-                    RadixSortUnsafe.Sort<float>(valsFloat, wFloat);
-                }
-                CheckSort<float>(valsFloat);
-            }
-            for (int i = 0; i < LOOP; i++)
-            {
-                origFloat.CopyTo(valsFloat, 0);
-                using (new BasicTimer("RadixSortUnsafe.Sort/descending"))
-                {
-                    RadixSortUnsafe.Sort<float>(valsFloat, wFloat, descending: true);
-                }
-                CheckSortDescending<float>(valsFloat);
-            }
+            //for (int i = 0; i < LOOP; i++)
+            //{
+            //    origFloat.CopyTo(valsFloat, 0);
+            //    using (new BasicTimer("RadixSort.ParallelSort"))
+            //    {
+            //        var workers = RadixSort.ParallelSort<float>(valsFloat, wFloat);
+            //        Console.Write($" using {workers} worker(s)");
+            //    }
+            //    CheckSort<float>(valsFloat);
+            //}
+            //for (int i = 0; i < LOOP; i++)
+            //{
+            //    origFloat.CopyTo(valsFloat, 0);
+            //    using (new BasicTimer("RadixSort.ParallelSort/descending"))
+            //    {
+            //        var workers = RadixSort.ParallelSort<float>(valsFloat, wFloat, descending: true);
+            //        Console.Write($" using {workers} worker(s)");
+            //    }
+            //    CheckSortDescending<float>(valsFloat);
+            //}
+            //for (int i = 0; i < LOOP; i++)
+            //{
+            //    origFloat.CopyTo(valsFloat, 0);
+            //    using (new BasicTimer("RadixSortUnsafe.Sort"))
+            //    {
+            //        RadixSortUnsafe.Sort<float>(valsFloat, wFloat);
+            //    }
+            //    CheckSort<float>(valsFloat);
+            //}
+            //for (int i = 0; i < LOOP; i++)
+            //{
+            //    origFloat.CopyTo(valsFloat, 0);
+            //    using (new BasicTimer("RadixSortUnsafe.Sort/descending"))
+            //    {
+            //        RadixSortUnsafe.Sort<float>(valsFloat, wFloat, descending: true);
+            //    }
+            //    CheckSortDescending<float>(valsFloat);
+            //}
             for (int i = 0; i < LOOP; i++)
             {
                 origFloat.CopyTo(valsFloat, 0);

@@ -11,7 +11,7 @@ namespace Sorted
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                return ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out var numberSystem),
+                return ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out NumberSystem numberSystem),
                     keys, workspace,
                     r, descending, uint.MaxValue, numberSystem);
             }
