@@ -138,6 +138,14 @@ namespace ElideBoundsCheckBenchmark
         [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
         public void Vectorized() => ViaBlockHelper<VectorizedBlockHelper>();
 
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void BranchlessXor() => ViaBlockHelper<BranchlessXorBlockHelper>();
+
+
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void VectorizedXor() => ViaBlockHelper<VectorizedXorBlockHelper>();
+
+
         void ViaBlockHelper<T>() where T : SomeBlockHelperBase, new ()
         {
             Span<float> typedSource = _randomSingles;
@@ -203,6 +211,22 @@ namespace ElideBoundsCheckBenchmark
             }
         }
 
+        sealed class BranchlessXorBlockHelper : SomeBlockHelperBase
+        {
+            public override void ToRadix(Span<uint> values, Span<uint> destination)
+            {
+                const uint MSB = 1U << 31;
+                for (int i = 0; i < values.Length; i++)
+                {
+                    uint raw = values[i];
+                    var ifNeg = (uint)(((int)raw) >> 31);
+                    destination[i] =
+                        (ifNeg & (raw ^ ~MSB)) // true
+                        | (~ifNeg & raw);      // false
+                }
+            }
+        }
+
         sealed class VectorizedBlockHelper : SomeBlockHelperBase
         {
             public override void ToRadix(Span<uint> values, Span<uint> destination)
@@ -236,6 +260,44 @@ namespace ElideBoundsCheckBenchmark
                     var ifNeg = (uint)(((int)raw) >> 31);
                     destination[i] =
                         (ifNeg & (~raw | MSB)) // true
+                        | (~ifNeg & raw);      // false
+                }
+            }
+        }
+
+        sealed class VectorizedXorBlockHelper : SomeBlockHelperBase
+        {
+            public override void ToRadix(Span<uint> values, Span<uint> destination)
+            {
+                const uint MSB = 1U << 31;
+
+                int i = 0;
+                if (Vector.IsHardwareAccelerated)
+                {
+                    var vSource = values.NonPortableCast<uint, Vector<uint>>();
+                    var vDest = destination.NonPortableCast<uint, Vector<uint>>();
+
+                    var vMSB = new Vector<uint>(MSB);
+                    var vNOMSB = ~vMSB;
+                    for (int j = 0; j < vSource.Length; j++)
+                    {
+                        var vec = vSource[j];
+                        vDest[j] = Vector.ConditionalSelect(
+                            condition: Vector.GreaterThan(vec, vNOMSB),
+                            left: vec ^ vNOMSB, // when true
+                            right: vec // when false
+                        );
+                    }
+
+                    // change our root offset for the remainder of the values
+                    i = vSource.Length * Vector<uint>.Count;
+                }
+                for (; i < values.Length; i++)
+                {
+                    uint raw = values[i];
+                    var ifNeg = (uint)(((int)raw) >> 31);
+                    destination[i] =
+                        (ifNeg & (raw ^ ~MSB)) // true
                         | (~ifNeg & raw);      // false
                 }
             }

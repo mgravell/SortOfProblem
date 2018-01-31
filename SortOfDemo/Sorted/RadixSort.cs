@@ -118,7 +118,7 @@ namespace Sorted
                 // sort *just* on the MSB
                 var split = SortCore32(keys, workspace, 1, RadixConverter.MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
                 if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
-                keyMask &= ~RadixConverter.MSB32;
+                keyMask &= ~RadixConverter.MSB32U;
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
