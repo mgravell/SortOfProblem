@@ -71,8 +71,8 @@ namespace Sorted
                 fixed (uint* k = &MemoryMarshal.GetReference(keys.NonPortableCast<T, uint>()))
                 fixed (uint* w = &MemoryMarshal.GetReference(workspace.NonPortableCast<T, uint>()))
                 {
-                    Sort32(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out var numberSystem), k, w, keys.Length,
-                        r, uint.MaxValue, !descending, numberSystem);
+                    Sort32(k, w, keys.Length,
+                        r, uint.MaxValue, !descending, NumberSystem<T>.Value);
                 }
             }
             else
@@ -81,7 +81,7 @@ namespace Sorted
             }
         }
         public static void Sort(uint* keys, uint* workspace, int length, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => Sort32(null, keys, workspace, length, r, mask, !descending, NumberSystem.Unsigned);
+            => Sort32(keys, workspace, length, r, mask, !descending, NumberSystem.Unsigned);
 
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
         {
@@ -91,7 +91,7 @@ namespace Sorted
             fixed (uint* k = &MemoryMarshal.GetReference(keys))
             fixed (uint* w = &MemoryMarshal.GetReference(workspace))
             {
-                Sort32(null, k, w, keys.Length, r, mask, !descending, NumberSystem.Unsigned);
+                Sort32(k, w, keys.Length, r, mask, !descending, NumberSystem.Unsigned);
             }
         }
 
@@ -111,7 +111,7 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
-        private static void Sort32(RadixConverter<uint> converter, uint* keys, uint* workspace, int len, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
+        private static void Sort32(uint* keys, uint* workspace, int len, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
             if (len <= 1 || keyMask == 0) return;
 
@@ -123,33 +123,12 @@ namespace Sorted
             uint mask = (uint)(countLength - 1);
 
             bool reversed = false;
-            if (converter != null)
-            {
-                converter.ToRadix(new Span<uint>(keys, len), new Span<uint>(workspace, len));
-                Swap(ref keys, ref workspace, ref reversed);
-            }
-
             if (SortCore32(keys, workspace, r, keyMask, countLength, len, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned))
             {
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (converter != null)
-            {
-                if (reversed)
-                {
-                    converter.FromRadix(new Span<uint>(keys, len), new Span<uint>(workspace, len));
-                }
-                else
-                {
-                    var s = new Span<uint>(keys, len);
-                    converter.FromRadix(s, s);
-                }
-            }
-            else if (reversed)
-            {
-                Unsafe.CopyBlock(workspace, keys, (uint)len << 2);
-            }
+            if (reversed) Unsafe.CopyBlock(workspace, keys, (uint)len << 2);
         }
 
         private static bool SortCore32(uint* keys, uint* workspace, int r, uint keyMask, int countLength, int len, uint* countsOffsets, int groups, uint mask, bool ascending, bool isSigned)

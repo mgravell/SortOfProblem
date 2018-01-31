@@ -1,11 +1,14 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
     public static partial class RadixSort
     {
+        internal const int MSB32 = 1 << 31;
+        internal const uint MSB32U = 1U << 31;
+        public static void SetNumberSystem<T>(NumberSystem numberSystem) => NumberSystem<T>.Set(numberSystem);
+
         private const int DEFAULT_R = 4, MAX_R = 16;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void ApplyAscending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
@@ -52,10 +55,10 @@ namespace Sorted
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                Sort32(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out var numberSystem),
+                Sort32(
                     keys.NonPortableCast<T, uint>(),
                     workspace.NonPortableCast<T, uint>(),
-                    r, uint.MaxValue, !descending, numberSystem);
+                    r, uint.MaxValue, !descending, NumberSystem<T>.Value);
             }
             else
             {
@@ -67,10 +70,10 @@ namespace Sorted
         {
             int workspaceSize = WorkspaceSize(keys, r);
             uint* workspace = stackalloc uint[workspaceSize];
-            Sort32(null, keys, new Span<uint>(workspace, workspaceSize), r, mask, !descending, NumberSystem.Unsigned);
+            Sort32(keys, new Span<uint>(workspace, workspaceSize), r, mask, !descending, NumberSystem.Unsigned);
         }
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => Sort32(null, keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
+            => Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
 
         static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
         {
@@ -93,7 +96,7 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
-        private static void Sort32(RadixConverter<uint> converter, Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
+        private static void Sort32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
             if (keys.Length <= 1 || keyMask == 0) return;
             if (workspace.Length < WorkspaceSize<uint>(keys.Length, r))
@@ -106,19 +109,14 @@ namespace Sorted
             uint mask = (uint)(countLength - 1);
 
             bool reversed = false;
-            if (converter != null)
-            {
-                converter.ToRadix(keys, workspace);
-                Swap(ref keys, ref workspace, ref reversed);
-            }
 
-            if ((keyMask & RadixConverter.MSB32U) == 0) numberSystem = NumberSystem.Unsigned; // without the MSB, sign doesn't matter
+            if ((keyMask & MSB32U) == 0) numberSystem = NumberSystem.Unsigned; // without the MSB, sign doesn't matter
             if (numberSystem == NumberSystem.SignBit)
             {
                 // sort *just* on the MSB
-                var split = SortCore32(keys, workspace, 1, RadixConverter.MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
+                var split = SortCore32(keys, workspace, 1, MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
                 if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
-                keyMask &= ~RadixConverter.MSB32U;
+                keyMask &= ~MSB32U;
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
@@ -131,13 +129,13 @@ namespace Sorted
                 }
                 else if (split.Split < (keys.Length / 2)) // lower group is smaller
                 {
-                    if(split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
+                    if (split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
                     // the lower-half is now in both spaces; respect the opinion of the upper-half 
                     if (upper.Reversed) Swap(ref keys, ref workspace, ref reversed);
                 }
                 else // upper group is smaller
                 {
-                    if(split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
+                    if (split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
                     // the upper-half is now in both spaces; respect the opinion of the lower-half 
                     if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
                 }
@@ -147,21 +145,7 @@ namespace Sorted
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (converter != null)
-            {
-                if (reversed)
-                {
-                    converter.FromRadix(keys, workspace);
-                }
-                else
-                {
-                    converter.FromRadix(keys, keys);
-                }
-            }
-            else if (reversed)
-            {
-                keys.CopyTo(workspace);
-            }
+            if (reversed) keys.CopyTo(workspace);
         }
 
         private static (bool Reversed, int Split) SortCore32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask,
@@ -194,7 +178,7 @@ namespace Sorted
                 split = (int)countsOffsets[1];
 
                 if (!ComputeOffsets(countsOffsets, len, c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
-                
+
 
                 if (ascending)
                     ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);

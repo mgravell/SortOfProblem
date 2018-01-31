@@ -11,9 +11,9 @@ namespace Sorted
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
-                return ParallelSort32<T>(RadixConverter.GetNonPassthruWithSignSupport<T, uint>(out NumberSystem numberSystem),
+                return ParallelSort32<T>(
                     keys, workspace,
-                    r, descending, uint.MaxValue, numberSystem);
+                    r, descending, uint.MaxValue, NumberSystem<T>.Value);
             }
             else
             {
@@ -22,14 +22,11 @@ namespace Sorted
         }
 
         public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
-            => ParallelSort32<uint>(null, keys, workspace, r, descending, mask, NumberSystem.Unsigned);
+            => ParallelSort32<uint>(keys, workspace, r, descending, mask, NumberSystem.Unsigned);
 
 
         enum WorkerStep
         {
-            ToRadix32,
-            FromRadix32,
-            FromRadix32Overwrite,
             Copy,
             BucketCountAscending,
             BucketCountDescending,
@@ -68,11 +65,6 @@ namespace Sorted
                 {
                     case WorkerStep.Copy:
                         _keys.Span.Slice(start, count).CopyTo(_workspace.Span.Slice(start, count));
-                        break;
-                    case WorkerStep.ToRadix32:
-                    case WorkerStep.FromRadix32Overwrite:
-                    case WorkerStep.FromRadix32:
-                        ToFromRadix(step, start, count);
                         break;
                     case WorkerStep.BucketCountAscending:
                     case WorkerStep.BucketCountDescending:
@@ -165,25 +157,8 @@ namespace Sorted
                 return true;
             }
 
-            private void ToFromRadix(WorkerStep step, int start, int count)
-            {
-                var from = _keys.Span.NonPortableCast<T, uint>().Slice(start, count);
-                var to = step == WorkerStep.FromRadix32Overwrite ? from
-                    : _workspace.Span.NonPortableCast<T, uint>().Slice(start, count);
-
-                if (step == WorkerStep.ToRadix32)
-                {
-                    _converter32.ToRadix(from, to);
-                }
-                else
-                {
-                    _converter32.FromRadix(from, to);
-                }
-            }
-
             readonly int _batchSize, _length, _bucketCount, _workerCount;
             readonly Memory<T> _countsOffsets;
-            readonly RadixConverter<uint> _converter32;
 
             volatile WorkerStep _step;
             int _batchIndex, _shift;
@@ -212,7 +187,7 @@ namespace Sorted
                 }
             }
             int _outstandingWorkersNeedsSync;
-            public Worker(RadixConverter<uint> converter, int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
+            public Worker(int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
             {
                 if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
                 if (keys.Length != workspace.Length) throw new ArgumentException("Workspace size mismatch", nameof(workspace));
@@ -221,7 +196,6 @@ namespace Sorted
                 _keys = keys;
                 _workspace = workspace;
                 _countsOffsets = countsOffsets;
-                _converter32 = converter;
                 _bucketCount = bucketCount;
                 _workerCount = workerCount;
             }
@@ -245,7 +219,7 @@ namespace Sorted
             return Math.Min(((count - 1) / 1024) + 1, MaxWorkerCount);
         }
 
-        private static int ParallelSort32<T>(RadixConverter<uint> converter, Memory<T> keys, Memory<T> workspace,
+        private static int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
             int r, bool descending, uint keyMask, NumberSystem numberSystem) where T : struct
         {
             if (keys.Length <= 1 || keyMask == 0) return 0;
@@ -262,16 +236,10 @@ namespace Sorted
             int groups = GroupCount<uint>(r);
             uint mask = (uint)(bucketCount - 1);
 
-            var worker = new Worker<T>(converter, workerCount, bucketCount, keys, workspace, workerCountsOffsets);
+            var worker = new Worker<T>(workerCount, bucketCount, keys, workspace, workerCountsOffsets);
 
             bool reversed = false;
-            if (converter != null)
-            {
-                worker.Execute(WorkerStep.ToRadix32);
-                worker.Swap();
-                reversed = !reversed;
-            }
-
+          
             int invertC = numberSystem != NumberSystem.Unsigned ? groups - 1 : -1;
             for (int c = 0, shift = 0; c < groups; c++, shift += r)
             {
@@ -292,15 +260,7 @@ namespace Sorted
                 worker.Swap();
                 reversed = !reversed;
             }
-
-            if (converter != null)
-            {
-                worker.Execute(reversed ? WorkerStep.FromRadix32 : WorkerStep.FromRadix32Overwrite);
-            }
-            else if (reversed)
-            {
-                worker.Execute(WorkerStep.Copy);
-            }
+            if (reversed) worker.Execute(WorkerStep.Copy);
             return workerCount;
         }
 
