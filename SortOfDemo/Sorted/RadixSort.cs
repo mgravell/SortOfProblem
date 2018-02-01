@@ -45,11 +45,11 @@ namespace Sorted
                 buckets[(int)((~keys[i] >> shift) & groupMask)]++;
         }
 
-        public static unsafe void SortSmall<T>(this Span<T> keys, int r = DEFAULT_R, bool descending = false) where T : struct
+        public static void SortSmall<T>(this Span<T> keys, int r = DEFAULT_R, bool descending = false) where T : struct
         {
             int workspaceSize = WorkspaceSize(keys, r);
-            byte* workspace = stackalloc byte[workspaceSize * Unsafe.SizeOf<T>()];
-            Sort<T>(keys, new Span<T>(workspace, workspaceSize), r, descending);
+            Span<byte> workspace = stackalloc byte[workspaceSize * Unsafe.SizeOf<T>()];
+            Sort<T>(keys, workspace.NonPortableCast<byte,T>(), r, descending);
         }
         public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
         {
@@ -66,11 +66,11 @@ namespace Sorted
             }
         }
 
-        public static unsafe void SortSmall(this Span<uint> keys, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void SortSmall(this Span<uint> keys, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
         {
             int workspaceSize = WorkspaceSize(keys, r);
-            uint* workspace = stackalloc uint[workspaceSize];
-            Sort32(keys, new Span<uint>(workspace, workspaceSize), r, mask, !descending, NumberSystem.Unsigned);
+            Span<uint> workspace = stackalloc uint[workspaceSize];
+            Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
         }
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
             => Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
