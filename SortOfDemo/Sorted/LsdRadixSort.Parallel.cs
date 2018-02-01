@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Sorted
 {
-    public static partial class RadixSort
+    public static partial class LsdRadixSort
     {
         public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
         {
@@ -201,7 +200,7 @@ namespace Sorted
                 _workerCount = workerCount;
             }
 
-            public void Swap() => RadixSort.Swap(ref _keys, ref _workspace);
+            public void Swap() => LsdRadixSort.Swap(ref _keys, ref _workspace);
 
             internal void SetGroup(uint groupMask, int shift)
             {

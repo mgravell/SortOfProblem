@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace Sorted
 {
-    public static unsafe partial class RadixSortUnsafe
+    public static unsafe partial class LsdRadixSortUnsafe
     {
         private const int DEFAULT_R = 4, MAX_R = 16;
 
@@ -154,7 +154,7 @@ namespace Sorted
                 else
                     BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask, countLength);
 
-                if (!ComputeOffsets(countsOffsets, countLength, len, c == invertC ? RadixSort.GetInvertStartIndex(32, r) : 0)) continue; // all in one group
+                if (!ComputeOffsets(countsOffsets, countLength, len, c == invertC ? LsdRadixSort.GetInvertStartIndex(32, r) : 0)) continue; // all in one group
 
                 if (ascending)
                     ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);

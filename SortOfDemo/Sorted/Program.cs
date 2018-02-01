@@ -99,7 +99,7 @@ namespace Sorted
                 origFloat.CopyTo(valsFloat, 0);
                 using (new BasicTimer("RadixSort.Sort"))
                 {
-                    RadixSort.Sort<float>(valsFloat, wFloat);
+                    LsdRadixSort.Sort<float>(valsFloat, wFloat);
                 }
                 CheckSort<float>(valsFloat);
             }
@@ -108,7 +108,7 @@ namespace Sorted
                 origFloat.CopyTo(valsFloat, 0);
                 using (new BasicTimer("RadixSort.Sort/descending"))
                 {
-                    RadixSort.Sort<float>(valsFloat, wFloat, descending: true);
+                    LsdRadixSort.Sort<float>(valsFloat, wFloat, descending: true);
                 }
                 CheckSortDescending<float>(valsFloat);
             }
@@ -190,7 +190,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSort.Sort"))
                 {
-                    RadixSort.Sort<int>(valsInt32, wInt);
+                    LsdRadixSort.Sort<int>(valsInt32, wInt);
                 }
                 CheckSort<int>(valsInt32);
             }
@@ -199,7 +199,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSort.Sort/descending"))
                 {
-                    RadixSort.Sort<int>(valsInt32, wInt, descending: true);
+                    LsdRadixSort.Sort<int>(valsInt32, wInt, descending: true);
                 }
                 CheckSortDescending<int>(valsInt32);
             }
@@ -209,7 +209,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSort.ParallelSort"))
                 {
-                    var workers = RadixSort.ParallelSort<int>(valsInt32, mem32);
+                    var workers = LsdRadixSort.ParallelSort<int>(valsInt32, mem32);
                     Console.Write($" using {workers} worker(s)");
                 }
                 CheckSort<int>(valsInt32);
@@ -219,7 +219,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSort.ParallelSort/descending"))
                 {
-                    var workers = RadixSort.ParallelSort<int>(valsInt32, mem32, descending: true);
+                    var workers = LsdRadixSort.ParallelSort<int>(valsInt32, mem32, descending: true);
                     Console.Write($" using {workers} worker(s)");
                 }
                 CheckSortDescending<int>(valsInt32);
@@ -229,7 +229,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSortUnsafe.Sort"))
                 {
-                    RadixSortUnsafe.Sort<int>(valsInt32, wInt);
+                    LsdRadixSortUnsafe.Sort<int>(valsInt32, wInt);
                 }
                 CheckSort<int>(valsInt32);
             }
@@ -238,7 +238,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSortUnsafe.Sort/descending"))
                 {
-                    RadixSortUnsafe.Sort<int>(valsInt32, wInt, descending: true);
+                    LsdRadixSortUnsafe.Sort<int>(valsInt32, wInt, descending: true);
                 }
                 CheckSortDescending<int>(valsInt32);
             }
@@ -247,7 +247,7 @@ namespace Sorted
                 origInt32.CopyTo(valsInt32, 0);
                 using (new BasicTimer("RadixSortUnsafe.Sort/descending"))
                 {
-                    RadixSortUnsafe.Sort<int>(valsInt32, wInt, descending: true);
+                    LsdRadixSortUnsafe.Sort<int>(valsInt32, wInt, descending: true);
                 }
                 CheckSortDescending<int>(valsInt32);
             }
@@ -289,12 +289,12 @@ namespace Sorted
                 origUInt32.CopyTo(valsUInt32, 0);
                 using (new BasicTimer("RadixSort.Sort"))
                 {
-                    RadixSort.Sort<uint>(valsUInt32, wUint);
+                    LsdRadixSort.Sort<uint>(valsUInt32, wUint);
                 }
                 CheckSort<uint>(valsUInt32);
                 using (new BasicTimer("RadixSort.Sort (sorted)"))
                 {
-                    RadixSort.Sort<uint>(valsUInt32, wUint);
+                    LsdRadixSort.Sort<uint>(valsUInt32, wUint);
                 }
                 CheckSort<uint>(valsUInt32);
             }
@@ -304,12 +304,12 @@ namespace Sorted
                 var slice = new Span<uint>(valsUInt32, 0, 2048);
                 using (new BasicTimer("RadixSort.SortSmall (on stack)"))
                 {
-                    RadixSort.SortSmall<uint>(slice);
+                    LsdRadixSort.SortSmall<uint>(slice);
                 }
                 CheckSort<uint>(slice);
                 using (new BasicTimer("RadixSort.SortSmall (on stack, sorted)"))
                 {
-                    RadixSort.SortSmall<uint>(slice);
+                    LsdRadixSort.SortSmall<uint>(slice);
                 }
                 CheckSort<uint>(slice);
             }
@@ -318,7 +318,7 @@ namespace Sorted
                 origUInt32.CopyTo(valsUInt32, 0);
                 using (new BasicTimer("RadixSort.Sort/descending"))
                 {
-                    RadixSort.Sort<uint>(valsUInt32, wUint, descending: true);
+                    LsdRadixSort.Sort<uint>(valsUInt32, wUint, descending: true);
                 }
                 CheckSortDescending<uint>(valsUInt32);
             }
@@ -328,7 +328,7 @@ namespace Sorted
                 origUInt32.CopyTo(valsUInt32, 0);
                 using (new BasicTimer("RadixSort.ParallelSort"))
                 {
-                    var workers = RadixSort.ParallelSort<uint>(valsUInt32, memu32);
+                    var workers = LsdRadixSort.ParallelSort<uint>(valsUInt32, memu32);
                     Console.Write($" using {workers} worker(s)");
                 }
                 CheckSort<uint>(valsUInt32);
@@ -338,7 +338,7 @@ namespace Sorted
                 origUInt32.CopyTo(valsUInt32, 0);
                 using (new BasicTimer("RadixSort.ParallelSort/descending"))
                 {
-                    var workers = RadixSort.ParallelSort<uint>(valsUInt32, memu32, descending: true);
+                    var workers = LsdRadixSort.ParallelSort<uint>(valsUInt32, memu32, descending: true);
                     Console.Write($" using {workers} worker(s)");
                 }
                 CheckSortDescending<uint>(valsUInt32);
@@ -348,7 +348,7 @@ namespace Sorted
                 origUInt32.CopyTo(valsUInt32, 0);
                 using (new BasicTimer("RadixSortUnsafe.Sort"))
                 {
-                    RadixSortUnsafe.Sort(valsUInt32, wUint, mask: uint.MaxValue);
+                    LsdRadixSortUnsafe.Sort(valsUInt32, wUint, mask: uint.MaxValue);
                 }
                 CheckSort<uint>(valsUInt32);
             }
@@ -357,7 +357,7 @@ namespace Sorted
                 origUInt32.CopyTo(valsUInt32, 0);
                 using (new BasicTimer("RadixSortUnsafe.Sort/descending"))
                 {
-                    RadixSortUnsafe.Sort(valsUInt32, wUint, descending: true, mask: uint.MaxValue);
+                    LsdRadixSortUnsafe.Sort(valsUInt32, wUint, descending: true, mask: uint.MaxValue);
                 }
                 CheckSortDescending<uint>(valsUInt32);
             }

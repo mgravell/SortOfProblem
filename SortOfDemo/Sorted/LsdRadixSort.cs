@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
-    public static partial class RadixSort
+    public static partial class LsdRadixSort
     {
         internal const int MSB32 = 1 << 31;
         internal const uint MSB32U = 1U << 31;
