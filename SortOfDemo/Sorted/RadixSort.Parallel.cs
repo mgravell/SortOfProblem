@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Sorted
@@ -70,8 +71,7 @@ namespace Sorted
                     case WorkerStep.BucketCountDescending:
                         {
                             var keys = _keys.Span.NonPortableCast<T, uint>();
-                            var buckets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
-                                                            batchIndex * _bucketCount, _bucketCount);
+                            var buckets = CountsOffsets(batchIndex);
                             if (step == WorkerStep.BucketCountAscending)
                                 BucketCountAscending(buckets, keys, start, end, _shift, _groupMask);
                             else
@@ -81,8 +81,7 @@ namespace Sorted
                     case WorkerStep.ApplyAscending:
                     case WorkerStep.ApplyDescending:
                         {
-                            var offsets = _countsOffsets.Span.NonPortableCast<T, uint>().Slice(
-                                                batchIndex * _bucketCount, _bucketCount);
+                            var offsets = CountsOffsets(batchIndex);
                             if (NeedsApply(offsets))
                             {
                                 var keys = _keys.Span.NonPortableCast<T, uint>();
@@ -117,7 +116,7 @@ namespace Sorted
 
             public bool ComputeOffsets(int bucketOffset)
             {
-                var allBuckets = _countsOffsets.Span.NonPortableCast<T, uint>();
+                var allBuckets = AllCountsOffsets();
                 int bucketCount = _bucketCount,
                     batchCount = allBuckets.Length / bucketCount,
                     len = _length;
@@ -158,7 +157,9 @@ namespace Sorted
             }
 
             readonly int _batchSize, _length, _bucketCount, _workerCount;
-            readonly Memory<T> _countsOffsets;
+            unsafe readonly uint* _countsOffsets;
+            private unsafe Span<uint> CountsOffsets(int batchIndex) => new Span<uint>(_countsOffsets + (batchIndex * _bucketCount), _bucketCount);
+            private unsafe Span<uint> AllCountsOffsets() => new Span<uint>(_countsOffsets, _workerCount * _bucketCount);
 
             volatile WorkerStep _step;
             int _batchIndex, _shift;
@@ -187,7 +188,7 @@ namespace Sorted
                 }
             }
             int _outstandingWorkersNeedsSync;
-            public Worker(int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, Memory<T> countsOffsets)
+            public unsafe Worker(int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, uint* countsOffsets)
             {
                 if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
                 if (keys.Length != workspace.Length) throw new ArgumentException("Workspace size mismatch", nameof(workspace));
@@ -219,20 +220,20 @@ namespace Sorted
             return Math.Min(((count - 1) / 1024) + 1, MaxWorkerCount);
         }
 
-        private static int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
+        private static unsafe int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
             int r, bool descending, uint keyMask, NumberSystem numberSystem) where T : struct
         {
-            if (keys.Length <= 1 || keyMask == 0) return 0;
-            if (workspace.Length < ParallelWorkspaceSize<uint>(keys.Length, r))
-                throw new ArgumentException($"The workspace provided is insufficient ({workspace.Length} vs {ParallelWorkspaceSize<uint>(keys.Length, r)} needed); the {nameof(ParallelWorkspaceSize)} method can be used to determine the minimum size required", nameof(workspace));
-
+            CheckR(r);
             int bucketCount = 1 << r, len = keys.Length;
+            if (len <= 1 || keyMask == 0) return 0;
 
-            int countsOffsetsAsT = (((bucketCount << 2) - 1) / Unsafe.SizeOf<T>()) + 1;
             int workerCount = WorkerCount(len);
-            var workerCountsOffsets = workspace.Slice(0, countsOffsetsAsT * workerCount);
+            // a shame that we nned to use "unsafe" for this, but we can't put a Span<uint> as
+            // a field on the worker; however: the stack *won't* move, so this is in fact
+            // perfectly safe, despite what it looks like
+            uint* workerCountsOffsets = stackalloc uint[workerCount * bucketCount];
 
-            workspace = workspace.Slice(countsOffsetsAsT * workerCount, len);
+            workspace = workspace.Slice(0, len);
             int groups = GroupCount<uint>(r);
             uint mask = (uint)(bucketCount - 1);
 
@@ -262,19 +263,6 @@ namespace Sorted
             }
             if (reversed) worker.Execute(WorkerStep.Copy);
             return workerCount;
-        }
-
-        public static int ParallelWorkspaceSize<T>(Span<T> keys, int r = DEFAULT_R) => ParallelWorkspaceSize<T>(keys.Length, r);
-        public static int ParallelWorkspaceSize<T>(int count, int r = DEFAULT_R)
-        {
-            if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
-            if (r < 1 || r > MAX_R) throw new ArgumentOutOfRangeException(nameof(r));
-            if (count <= 1) return 0;
-
-            int countLength = 1 << r;
-            int countsOffsetsAsT = (((countLength << 2) - 1) / Unsafe.SizeOf<T>()) + 1;
-
-            return (countsOffsetsAsT * WorkerCount(count)) + count;
         }
     }
 }

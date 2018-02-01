@@ -88,10 +88,7 @@ namespace Sorted
                 origInt32[i] = ival;
                 origUInt32[i] = unchecked((uint)ival);
             }
-            var wFloat = new float[Math.Max(
-                RadixSort.WorkspaceSize<float>(origFloat.Length),
-                RadixSort.ParallelWorkspaceSize<float>(origFloat.Length)
-            )];
+            var wFloat = new float[origFloat.Length];
             Console.WriteLine($"Workspace length: {wFloat.Length}");
 
             Console.WriteLine();

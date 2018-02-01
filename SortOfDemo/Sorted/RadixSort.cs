@@ -47,8 +47,7 @@ namespace Sorted
 
         public static void SortSmall<T>(this Span<T> keys, int r = DEFAULT_R, bool descending = false) where T : struct
         {
-            int workspaceSize = WorkspaceSize(keys, r);
-            Span<byte> workspace = stackalloc byte[workspaceSize * Unsafe.SizeOf<T>()];
+            Span<byte> workspace = stackalloc byte[keys.Length * Unsafe.SizeOf<T>()];
             Sort<T>(keys, workspace.NonPortableCast<byte,T>(), r, descending);
         }
         public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
@@ -68,8 +67,7 @@ namespace Sorted
 
         public static void SortSmall(this Span<uint> keys, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
         {
-            int workspaceSize = WorkspaceSize(keys, r);
-            Span<uint> workspace = stackalloc uint[workspaceSize];
+            Span<uint> workspace = stackalloc uint[keys.Length * sizeof(uint)];
             Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
         }
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
@@ -99,12 +97,11 @@ namespace Sorted
         private static void Sort32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
             if (keys.Length <= 1 || keyMask == 0) return;
-            if (workspace.Length < WorkspaceSize<uint>(keys.Length, r))
-                throw new ArgumentException($"The workspace provided is insufficient ({workspace.Length} vs {WorkspaceSize<uint>(keys.Length, r)} needed); the {nameof(WorkspaceSize)} method can be used to determine the minimum size required", nameof(workspace));
+            CheckR(r);
 
             int countLength = 1 << r;
-            var countsOffsets = workspace.Slice(0, countLength);
-            workspace = workspace.Slice(countLength, keys.Length);
+            Span<uint> countsOffsets = stackalloc uint[countLength];
+            workspace = workspace.Slice(0, keys.Length);
             int groups = GroupCount<uint>(r);
             uint mask = (uint)(countLength - 1);
 
@@ -221,17 +218,9 @@ namespace Sorted
             return true;
         }
 
-        public static int WorkspaceSize<T>(Span<T> keys, int r = DEFAULT_R) => WorkspaceSize<T>(keys.Length, r);
-        public static int WorkspaceSize<T>(int count, int r = DEFAULT_R)
+        private static void CheckR(int count, int r = DEFAULT_R)
         {
-            if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
             if (r < 1 || r > MAX_R) throw new ArgumentOutOfRangeException(nameof(r));
-            if (count <= 1) return 0;
-
-            int countLength = 1 << r;
-            int countsOffsetsAsT = (((countLength << 2) - 1) / Unsafe.SizeOf<T>()) + 1;
-
-            return countsOffsetsAsT + count;
         }
     }
 }

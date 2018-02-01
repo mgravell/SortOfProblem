@@ -14,6 +14,7 @@ namespace Sorted
         {
             uint* ptr = keys + start;
             int count = end - start;
+
             while (count-- != 0)
             {
                 var j = offsets[(int)((*ptr >> shift) & groupMask)]++;
@@ -64,7 +65,7 @@ namespace Sorted
         public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
         {
             if (keys.Length <= 1) return;
-            if (workspace.Length <= keys.Length) throw new ArgumentException("Insufficient workspace", nameof(workspace));
+            workspace = workspace.Slice(0, keys.Length);
 
             if (Unsafe.SizeOf<T>() == 4)
             {
@@ -86,7 +87,7 @@ namespace Sorted
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
         {
             if (keys.Length <= 1) return;
-            if (workspace.Length <= keys.Length) throw new ArgumentException("Insufficient workspace", nameof(workspace));
+            workspace = workspace.Slice(0, keys.Length);
 
             fixed (uint* k = &MemoryMarshal.GetReference(keys))
             fixed (uint* w = &MemoryMarshal.GetReference(workspace))
@@ -128,7 +129,10 @@ namespace Sorted
                 Swap(ref keys, ref workspace, ref reversed);
             }
 
-            if (reversed) Unsafe.CopyBlock(workspace, keys, (uint)len << 2);
+            if (reversed)
+            {
+                Unsafe.CopyBlock(workspace, keys, (uint)len << 2);
+            }
         }
 
         private static bool SortCore32(uint* keys, uint* workspace, int r, uint keyMask, int countLength, int len, uint* countsOffsets, int groups, uint mask, bool ascending, bool isSigned)
