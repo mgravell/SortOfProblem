@@ -322,6 +322,15 @@ namespace Sorted
                 }
                 CheckSortDescending<uint>(valsUInt32);
             }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origUInt32.CopyTo(valsUInt32, 0);
+                using (new BasicTimer("MSD RadixSort.Sort/descending"))
+                {
+                    MsdRadixSort.Sort<uint>(valsUInt32, wUint, descending: true);
+                }
+                CheckSortDescending<uint>(valsUInt32);
+            }
             var memu32 = new uint[wFloat.Length];
             for (int i = 0; i < LOOP; i++)
             {

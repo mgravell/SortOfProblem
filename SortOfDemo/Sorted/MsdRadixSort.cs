@@ -27,6 +27,10 @@ namespace Sorted
 
         private static void Sort32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
+            if ((keyMask & Util.MSB32U) == 0) numberSystem = NumberSystem.Unsigned;
+
+            if (!ascending || numberSystem != NumberSystem.Unsigned) throw new NotImplementedException("Need to do that!");
+            
             if (ascending ? Util.ShortSortAscending(keys, 0, (uint)keys.Length) : Util.ShortSortDescending(keys, 0, (uint)keys.Length))
             {
                 r = Util.ChooseBitCount(r, DefaultR);
