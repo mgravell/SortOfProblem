@@ -29,10 +29,11 @@ namespace Sorted
             if (keys.Length <= 1) return;
             workspace = workspace.Slice(0, keys.Length);
 
+            Span<uint> offsets = stackalloc uint[1 << r];
             int bucketCount = 1 << r, groups = ((32 - 1) / r) + 1, mask = bucketCount - 1;
-            Sort32(keys, workspace, keyMask, (uint)(bucketCount - 1), r, 32 - r, ascending, 0, keys.Length);
+            Sort32(keys, workspace, offsets, keyMask, (uint)(bucketCount - 1), r, 32 - r, ascending, 0, keys.Length);
         }
-        static void Sort32(Span<uint> keys, Span<uint> workspace, uint keyMask, uint mask, int r, int shift, bool ascending, int start, int end)
+        static void Sort32(Span<uint> keys, Span<uint> workspace, Span<uint> offsets, uint keyMask, uint mask, int r, int shift, bool ascending, int start, int end)
         {
             var groupMask = (keyMask >> shift) & mask;
             keyMask &= ~(mask << shift);
@@ -43,8 +44,6 @@ namespace Sorted
             else
             {
                 Span<uint> buckets = stackalloc uint[1 << r];
-                Span<uint> offsets = stackalloc uint[1 << r];
-                // Console.WriteLine($"counting [{start},{end})");
                 if (ascending)
                     Util.BucketCountAscending(buckets, keys, start, end, shift, groupMask);
                 else
@@ -53,7 +52,6 @@ namespace Sorted
                 buckets.CopyTo(offsets);
                 if (Util.ComputeOffsets(offsets, end - start, 0, (uint)start))
                 {
-                    // Console.WriteLine($"applying [{start},{end})");
                     if (ascending)
                         Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
                     else
@@ -69,14 +67,46 @@ namespace Sorted
                     for (int i = 0; i < buckets.Length; i++)
                     {
                         var grp = buckets[i];
-                        if (grp != 0)
+                        uint x, y, z;
+                        switch (grp)
                         {
-                            int next = offset + (int)grp;
-                            // Console.WriteLine($"\tgrp {i}, {grp} elements");
-                            Sort32(keys, workspace, keyMask, mask, r, shift, ascending, offset, next);
-                            offset = next;
+                            case 0: break;
+                            case 1: offset++; break;
+                            case 2:
+                                x = keys[offset];
+                                y = keys[offset + 1];
+                                if(x > y)
+                                {
+                                    keys[offset] = y;
+                                    keys[offset + 1] = x;
+                                }
+                                offset += 2;
+                                break;
+                            default:
+                                int next = offset + (int)grp;
+                                Sort32(keys, workspace, offsets, keyMask, mask, r, shift, ascending, offset, next);
+                                offset = next;
+                                break;
                         }
                     }
+                }
+            }
+        }
+
+        private static void InsertionSortAscending(Span<uint> keys, int start, int end)
+        {
+            for (int i = start; i < end - 1; i++)
+            {
+                var j = i + 1;
+                uint x, y;
+                while (j > 0)
+                {
+                    if ((x = keys[j - 1]) > (y = keys[j]))
+                    {
+                        keys[j - 1] = y;
+                        keys[j] = x;
+                    }
+                    j--;
                 }
             }
         }
