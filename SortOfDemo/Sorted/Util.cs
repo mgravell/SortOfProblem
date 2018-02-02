@@ -7,18 +7,26 @@ namespace Sorted
     {
         internal const int MSB32 = 1 << 31;
         internal const uint MSB32U = 1U << 31;
-        internal const int DEFAULT_R = 4, MAX_R = 16;
+        
         internal static int WorkerCount(int count)
         {
-            if (count <= 0) return 0;
-            return Math.Min(((count - 1) / 1024) + 1, MaxWorkerCount);
+            int groupCount = ((count - 1) / 1024) + 1;
+            if (groupCount <= 1) return 1;
+
+            int maxCount = MaxWorkerCount;
+            if (maxCount <= 0 || maxCount > _processorCount)
+                maxCount = _processorCount;
+            return Math.Min(groupCount, maxCount);
         }
+        private readonly static int _processorCount = Environment.ProcessorCount;
+        public static int MaxWorkerCount { get; set; }
 
-        internal static readonly int MaxWorkerCount = Environment.ProcessorCount;
-
-        internal static void CheckR(int count, int r = DEFAULT_R)
+        
+        internal static int ChooseBitCount(int r, int @default)
         {
-            if (r < 1 || r > MAX_R) throw new ArgumentOutOfRangeException(nameof(r));
+            if (r < 1) return ChooseBitCount(@default, 8);
+            if (r > 16) return 16;
+            return r;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -79,6 +87,191 @@ namespace Sorted
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool ShortSortAscending(Span<uint> keys, int offset, uint count)
+        {
+            switch(count)
+            {
+                case 0:
+                case 1:
+                    return false;
+                case 2:
+                    UpSwap(ref keys[offset++], ref keys[offset]);
+                    return false;
+                case 3:
+                    UpSwap(ref keys[offset++], ref keys[offset++], ref keys[offset]);
+                    return false;
+                case 4:
+                    UpSwap(ref keys[offset++], ref keys[offset++], ref keys[offset++], ref keys[offset]);
+                    return false;
+                case 5:
+                    UpSwap(ref keys[offset++], ref keys[offset++], ref keys[offset++], ref keys[offset++], ref keys[offset]);
+                    return false;
+                default:
+                    return true;
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool ShortSortDescending(Span<uint> keys, int offset, uint count)
+        {
+            switch (count)
+            {
+                case 0:
+                case 1:
+                    return false;
+                case 2:
+                    DownSwap(ref keys[offset++], ref keys[offset]);
+                    return false;
+                case 3:
+                    DownSwap(ref keys[offset++], ref keys[offset++], ref keys[offset]);
+                    return false;
+                case 4:
+                    DownSwap(ref keys[offset++], ref keys[offset++], ref keys[offset++], ref keys[offset]);
+                    return false;
+                case 5:
+                    DownSwap(ref keys[offset++], ref keys[offset++], ref keys[offset++], ref keys[offset++], ref keys[offset]);
+                    return false;
+                default:
+                    return true;
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b, ref uint c, ref uint d, ref uint e, ref uint f)
+        {
+            UpSwap(ref a, ref b);
+            UpSwap(ref a, ref c);
+            UpSwap(ref a, ref d);
+            UpSwap(ref a, ref e);
+            UpSwap(ref a, ref f);
+            UpSwap(ref b, ref c);
+            UpSwap(ref b, ref d);
+            UpSwap(ref b, ref e);
+            UpSwap(ref b, ref f);
+            UpSwap(ref c, ref d);
+            UpSwap(ref c, ref e);
+            UpSwap(ref c, ref f);
+            UpSwap(ref d, ref e);
+            UpSwap(ref d, ref f);
+            UpSwap(ref e, ref f);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b, ref uint c, ref uint d, ref uint e)
+        {
+            UpSwap(ref a, ref b);
+            UpSwap(ref a, ref c);
+            UpSwap(ref a, ref d);
+            UpSwap(ref a, ref e);
+            UpSwap(ref b, ref c);
+            UpSwap(ref b, ref d);
+            UpSwap(ref b, ref e);
+            UpSwap(ref c, ref d);
+            UpSwap(ref c, ref e);
+            UpSwap(ref d, ref e);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b, ref uint c, ref uint d)
+        {
+            UpSwap(ref a, ref b);
+            UpSwap(ref a, ref c);
+            UpSwap(ref a, ref d);
+            UpSwap(ref b, ref c);
+            UpSwap(ref b, ref d);
+            UpSwap(ref c, ref d);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b, ref uint c)
+        {
+            UpSwap(ref a, ref b);
+            UpSwap(ref a, ref c);
+            UpSwap(ref b, ref c);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b)
+        {
+            if (a > b)
+            {
+                var tmp = a;
+                a = b;
+                b = a;
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void DownSwap(ref uint a, ref uint b, ref uint c, ref uint d, ref uint e, ref uint f)
+        {
+            DownSwap(ref a, ref b);
+            DownSwap(ref a, ref c);
+            DownSwap(ref a, ref d);
+            DownSwap(ref a, ref e);
+            DownSwap(ref a, ref f);
+            DownSwap(ref b, ref c);
+            DownSwap(ref b, ref d);
+            DownSwap(ref b, ref e);
+            DownSwap(ref b, ref f);
+            DownSwap(ref c, ref d);
+            DownSwap(ref c, ref e);
+            DownSwap(ref c, ref f);
+            DownSwap(ref d, ref e);
+            DownSwap(ref d, ref f);
+            DownSwap(ref e, ref f);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void DownSwap(ref uint a, ref uint b, ref uint c, ref uint d, ref uint e)
+        {
+            DownSwap(ref a, ref b);
+            DownSwap(ref a, ref c);
+            DownSwap(ref a, ref d);
+            DownSwap(ref a, ref e);
+            DownSwap(ref b, ref c);
+            DownSwap(ref b, ref d);
+            DownSwap(ref b, ref e);
+            DownSwap(ref c, ref d);
+            DownSwap(ref c, ref e);
+            DownSwap(ref d, ref e);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void DownSwap(ref uint a, ref uint b, ref uint c, ref uint d)
+        {
+            DownSwap(ref a, ref b);
+            DownSwap(ref a, ref c);
+            DownSwap(ref a, ref d);
+            DownSwap(ref b, ref c);
+            DownSwap(ref b, ref d);
+            DownSwap(ref c, ref d);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void DownSwap(ref uint a, ref uint b, ref uint c)
+        {
+            DownSwap(ref a, ref b);
+            DownSwap(ref a, ref c);
+            DownSwap(ref b, ref c);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void DownSwap(ref uint a, ref uint b)
+        {
+            if (a < b)
+            {
+                var tmp = a;
+                a = b;
+                b = a;
+            }
+        }
 
+        private static void InsertionSortAscending(Span<uint> keys, int start, int end)
+        {
+            for (int i = start; i < end - 1; i++)
+            {
+                var j = i + 1;
+                uint x, y;
+                while (j > 0)
+                {
+                    if ((x = keys[j - 1]) > (y = keys[j]))
+                    {
+                        keys[j - 1] = y;
+                        keys[j] = x;
+                    }
+                    j--;
+                }
+            }
+        }
     }
 }

@@ -5,11 +5,11 @@ namespace Sorted
 {
     public static class MsdRadixSort
     {
-        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = Util.DEFAULT_R, bool descending = false, uint keyMask = uint.MaxValue)
+        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = default, bool descending = false, uint keyMask = uint.MaxValue)
         {
             Sort32(keys, workspace, r, keyMask, !descending, NumberSystem.Unsigned);
         }
-        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = Util.DEFAULT_R, bool descending = false) where T : struct
+        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = default, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
@@ -23,119 +23,85 @@ namespace Sorted
             }
         }
 
+        public static int DefaultR { get; set; }
+
         private static void Sort32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
-            Util.CheckR(r);
-            if (keys.Length <= 1) return;
-            workspace = workspace.Slice(0, keys.Length);
-
-            Span<uint> offsets = stackalloc uint[1 << r];
-            int bucketCount = 1 << r, groups = ((32 - 1) / r) + 1, mask = bucketCount - 1;
-            Sort32(keys, workspace, offsets, keyMask, (uint)(bucketCount - 1), r, 32 - r, ascending, 0, keys.Length);
-        }
-        static void Sort32(Span<uint> keys, Span<uint> workspace, Span<uint> offsets, uint keyMask, uint mask, int r, int shift, bool ascending, int start, int end)
-        {
-            var groupMask = (keyMask >> shift) & mask;
-            keyMask &= ~(mask << shift);
-            if (groupMask == 0)
+            if (ascending ? Util.ShortSortAscending(keys, 0, (uint)keys.Length) : Util.ShortSortDescending(keys, 0, (uint)keys.Length))
             {
+                r = Util.ChooseBitCount(r, DefaultR);
+                workspace = workspace.Slice(0, keys.Length);
+
                 if (keyMask == 0) return;
+
+                Span<uint> offsets = stackalloc uint[1 << r];
+                int bucketCount = 1 << r, groups = ((32 - 1) / r) + 1;
+
+                uint mask = (uint)(bucketCount - 1), groupMask;
+                var shift = 32;
+                do
+                {
+                    shift -= r;
+                    groupMask = (keyMask >> shift) & mask;
+                    keyMask &= ~(mask << shift);
+                } while (groupMask == 0);
+
+                // no need to check groupMask is non-zero - we already checked keyMask, so we definitely expect *something*
+                Sort32(keys, workspace, offsets, keyMask, groupMask, mask, r, shift, ascending, 0, keys.Length);
             }
+        }
+
+        static void Sort32(Span<uint> keys, Span<uint> workspace, Span<uint> offsets, uint keyMask, uint groupMask, uint mask, int r, int shift, bool ascending, int start, int end)
+        {
+
+            Span<uint> buckets = stackalloc uint[1 << r];
+            if (ascending)
+                Util.BucketCountAscending(buckets, keys, start, end, shift, groupMask);
             else
+                Util.BucketCountDescending(buckets, keys, start, end, shift, groupMask);
+
+            buckets.CopyTo(offsets);
+            if (Util.ComputeOffsets(offsets, end - start, 0, (uint)start))
             {
-                Span<uint> buckets = stackalloc uint[1 << r];
                 if (ascending)
-                    Util.BucketCountAscending(buckets, keys, start, end, shift, groupMask);
+                    Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
                 else
-                    Util.BucketCountDescending(buckets, keys, start, end, shift, groupMask);
-
-                buckets.CopyTo(offsets);
-                if (Util.ComputeOffsets(offsets, end - start, 0, (uint)start))
-                {
-                    if (ascending)
-                        Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
-                    else
-                        Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
-                    workspace.Slice(start, end - start).CopyTo(keys.Slice(start, end - start));
-                }
+                    Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
+                workspace.Slice(start, end - start).CopyTo(keys.Slice(start, end - start));
+            }
 
 
-                int offset = start;
+            // cascade to the sub-arrays of each sub-group
+
+            do // get the next group mask - skip until we get a non-zero mask
+            {
                 shift -= r;
-                //if (shift >= -r)
+                groupMask = (keyMask >> shift) & mask;
+                keyMask &= ~(mask << shift);
+            } while (groupMask == 0 && keyMask != 0);
+
+            if (groupMask != 0)
+            {
+                int offset = start;
+                for (int i = 0; i < buckets.Length; i++)
                 {
-                    for (int i = 0; i < buckets.Length; i++)
+                    var grp = buckets[i];
+                    switch (grp)
                     {
-                        var grp = buckets[i];
-                        switch (grp)
-                        {
-                            case 0: break;
-                            case 1: offset++; break;
-                            case 2:
-                                UpSwap(ref keys[offset++], ref keys[offset++]);
-                                break;
-                            case 3:
-                                UpSwap(ref keys[offset++], ref keys[offset++],
-                                    ref keys[offset++]);
-                                break;
-                            case 4:
-                                UpSwap(ref keys[offset++], ref keys[offset++],
-                                    ref keys[offset++], ref keys[offset++]);
-                                break;
-                            default:
-                                int next = offset + (int)grp;
-                                Sort32(keys, workspace, offsets, keyMask, mask, r, shift, ascending, offset, next);
-                                offset = next;
-                                break;
-                        }
+                        case 0: break;
+                        case 1: offset++; break;
+                        default:
+                            int next = offset + (int)grp;
+                            if (ascending ? Util.ShortSortAscending(keys, offset, grp) : Util.ShortSortDescending(keys, offset, grp))
+                            {
+                                Sort32(keys, workspace, offsets, keyMask, groupMask, mask, r, shift, ascending, offset, next);
+                            }
+                            offset = next;
+                            break;
                     }
                 }
-            }
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void UpSwap(ref uint a, ref uint b, ref uint c, ref uint d)
-        {
-            UpSwap(ref a, ref b);
-            UpSwap(ref a, ref c);
-            UpSwap(ref a, ref d);
-            UpSwap(ref b, ref c);
-            UpSwap(ref b, ref d);
-            UpSwap(ref c, ref d);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void UpSwap(ref uint a, ref uint b, ref uint c)
-        {
-            UpSwap(ref a, ref b);
-            UpSwap(ref a, ref c);
-            UpSwap(ref b, ref c);
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void UpSwap(ref uint a, ref uint b)
-        {
-            if(a > b)
-            {
-                var tmp = a;
-                a = b;
-                b = a;
             }
         }
 
-        private static void InsertionSortAscending(Span<uint> keys, int start, int end)
-        {
-            for (int i = start; i < end - 1; i++)
-            {
-                var j = i + 1;
-                uint x, y;
-                while (j > 0)
-                {
-                    if ((x = keys[j - 1]) > (y = keys[j]))
-                    {
-                        keys[j - 1] = y;
-                        keys[j] = x;
-                    }
-                    j--;
-                }
-            }
-        }
     }
 }

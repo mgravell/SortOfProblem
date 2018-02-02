@@ -6,8 +6,6 @@ namespace Sorted
 {
     public static unsafe partial class LsdRadixSortUnsafe
     {
-        private const int DEFAULT_R = 4, MAX_R = 16;
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void ApplyAscending(uint* offsets, uint* keys, uint* workspace,
         int start, int end, int shift, uint groupMask)
@@ -62,7 +60,7 @@ namespace Sorted
             while (bucketCount-- != 0)
                 *buckets++ = *localBuckets++;
         }
-        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
+        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = default, bool descending = false) where T : struct
         {
             if (keys.Length <= 1) return;
             workspace = workspace.Slice(0, keys.Length);
@@ -81,10 +79,10 @@ namespace Sorted
                 throw new NotSupportedException($"Sort type '{typeof(T).Name}' is {Unsafe.SizeOf<T>()} bytes, which is not supported");
             }
         }
-        public static void Sort(uint* keys, uint* workspace, int length, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void Sort(uint* keys, uint* workspace, int length, int r = default, bool descending = false, uint mask = uint.MaxValue)
             => Sort32(keys, workspace, length, r, mask, !descending, NumberSystem.Unsigned);
 
-        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = default, bool descending = false, uint mask = uint.MaxValue)
         {
             if (keys.Length <= 1) return;
             workspace = workspace.Slice(0, keys.Length);
@@ -112,12 +110,13 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
+        public static int DefaultR { get; set; }
+
         private static void Sort32(uint* keys, uint* workspace, int len, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
             if (len <= 1 || keyMask == 0) return;
-
-            if (r < 1 || r > MAX_R) throw new ArgumentOutOfRangeException(nameof(r));
-
+            r = Util.ChooseBitCount(r, DefaultR);
+            
             int countLength = 1 << r;
             int groups = GroupCount<uint>(r);
             uint* countsOffsets = stackalloc uint[countLength];

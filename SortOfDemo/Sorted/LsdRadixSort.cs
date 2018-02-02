@@ -5,12 +5,12 @@ namespace Sorted
 {
     public static partial class LsdRadixSort
     {
-       public static void SortSmall<T>(this Span<T> keys, int r = Util.DEFAULT_R, bool descending = false) where T : struct
+       public static void SortSmall<T>(this Span<T> keys, int r = default, bool descending = false) where T : struct
         {
             Span<byte> workspace = stackalloc byte[keys.Length * Unsafe.SizeOf<T>()];
             Sort<T>(keys, workspace.NonPortableCast<byte,T>(), r, descending);
         }
-        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = Util.DEFAULT_R, bool descending = false) where T : struct
+        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = default, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
@@ -25,12 +25,12 @@ namespace Sorted
             }
         }
 
-        public static void SortSmall(this Span<uint> keys, int r = Util.DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void SortSmall(this Span<uint> keys, int r = default, bool descending = false, uint mask = uint.MaxValue)
         {
             Span<uint> workspace = stackalloc uint[keys.Length * sizeof(uint)];
             Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
         }
-        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = Util.DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = default, bool descending = false, uint mask = uint.MaxValue)
             => Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
 
         static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
@@ -54,9 +54,10 @@ namespace Sorted
             return ((bits - 1) / r) + 1;
         }
 
+        public static int DefaultR { get; set; }
         private static void Sort32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
-            Util.CheckR(r);
+            r = Util.ChooseBitCount(r,DefaultR);
             if (keys.Length <= 1 || keyMask == 0) return;
             
             int countLength = 1 << r;

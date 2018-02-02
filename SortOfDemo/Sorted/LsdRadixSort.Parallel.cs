@@ -7,7 +7,7 @@ namespace Sorted
 {
     public static partial class LsdRadixSort
     {
-        public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = Util.DEFAULT_R, bool descending = false) where T : struct
+        public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = default, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
@@ -21,7 +21,7 @@ namespace Sorted
             }
         }
 
-        public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = Util.DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = default, bool descending = false, uint mask = uint.MaxValue)
             => ParallelSort32<uint>(keys, workspace, r, descending, mask, NumberSystem.Unsigned);
 
 
@@ -215,7 +215,7 @@ namespace Sorted
         private static unsafe int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
             int r, bool descending, uint keyMask, NumberSystem numberSystem) where T : struct
         {
-            Util.CheckR(r);
+            r = Util.ChooseBitCount(r, DefaultR);
             int bucketCount = 1 << r, len = keys.Length;
             if (len <= 1 || keyMask == 0) return 0;
 
