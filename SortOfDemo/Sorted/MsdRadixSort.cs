@@ -67,20 +67,20 @@ namespace Sorted
                     for (int i = 0; i < buckets.Length; i++)
                     {
                         var grp = buckets[i];
-                        uint x, y, z;
                         switch (grp)
                         {
                             case 0: break;
                             case 1: offset++; break;
                             case 2:
-                                x = keys[offset];
-                                y = keys[offset + 1];
-                                if(x > y)
-                                {
-                                    keys[offset] = y;
-                                    keys[offset + 1] = x;
-                                }
-                                offset += 2;
+                                UpSwap(ref keys[offset++], ref keys[offset++]);
+                                break;
+                            case 3:
+                                UpSwap(ref keys[offset++], ref keys[offset++],
+                                    ref keys[offset++]);
+                                break;
+                            case 4:
+                                UpSwap(ref keys[offset++], ref keys[offset++],
+                                    ref keys[offset++], ref keys[offset++]);
                                 break;
                             default:
                                 int next = offset + (int)grp;
@@ -90,6 +90,33 @@ namespace Sorted
                         }
                     }
                 }
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b, ref uint c, ref uint d)
+        {
+            UpSwap(ref a, ref b);
+            UpSwap(ref a, ref c);
+            UpSwap(ref a, ref d);
+            UpSwap(ref b, ref c);
+            UpSwap(ref b, ref d);
+            UpSwap(ref c, ref d);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b, ref uint c)
+        {
+            UpSwap(ref a, ref b);
+            UpSwap(ref a, ref c);
+            UpSwap(ref b, ref c);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void UpSwap(ref uint a, ref uint b)
+        {
+            if(a > b)
+            {
+                var tmp = a;
+                a = b;
+                b = a;
             }
         }
 
