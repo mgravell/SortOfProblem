@@ -5,52 +5,12 @@ namespace Sorted
 {
     public static partial class LsdRadixSort
     {
-        internal const int MSB32 = 1 << 31;
-        internal const uint MSB32U = 1U << 31;
-        public static void SetNumberSystem<T>(NumberSystem numberSystem) => NumberSystem<T>.Set(numberSystem);
-
-        private const int DEFAULT_R = 4, MAX_R = 16;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void ApplyAscending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
-                int start, int end, int shift, uint groupMask)
-        {
-            for (int i = start; i < end; i++)
-            {
-                var j = offsets[(int)((keys[i] >> shift) & groupMask)]++;
-                workspace[(int)j] = keys[i];
-            }
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void ApplyDescending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
-            int start, int end, int shift, uint groupMask)
-        {
-            for (int i = start; i < end; i++)
-            {
-                var j = offsets[(int)((~keys[i] >> shift) & groupMask)]++;
-                workspace[(int)j] = keys[i];
-            }
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void BucketCountAscending(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
-        {
-            buckets.Clear();
-            for (int i = start; i < end; i++)
-                buckets[(int)((keys[i] >> shift) & groupMask)]++;
-        }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void BucketCountDescending(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
-        {
-            buckets.Clear();
-            for (int i = start; i < end; i++)
-                buckets[(int)((~keys[i] >> shift) & groupMask)]++;
-        }
-
-        public static void SortSmall<T>(this Span<T> keys, int r = DEFAULT_R, bool descending = false) where T : struct
+       public static void SortSmall<T>(this Span<T> keys, int r = Util.DEFAULT_R, bool descending = false) where T : struct
         {
             Span<byte> workspace = stackalloc byte[keys.Length * Unsafe.SizeOf<T>()];
             Sort<T>(keys, workspace.NonPortableCast<byte,T>(), r, descending);
         }
-        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
+        public static void Sort<T>(this Span<T> keys, Span<T> workspace, int r = Util.DEFAULT_R, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
@@ -65,12 +25,12 @@ namespace Sorted
             }
         }
 
-        public static void SortSmall(this Span<uint> keys, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void SortSmall(this Span<uint> keys, int r = Util.DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
         {
             Span<uint> workspace = stackalloc uint[keys.Length * sizeof(uint)];
             Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
         }
-        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = Util.DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
             => Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
 
         static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
@@ -96,9 +56,9 @@ namespace Sorted
 
         private static void Sort32(Span<uint> keys, Span<uint> workspace, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
+            Util.CheckR(r);
             if (keys.Length <= 1 || keyMask == 0) return;
-            CheckR(r);
-
+            
             int countLength = 1 << r;
             Span<uint> countsOffsets = stackalloc uint[countLength];
             workspace = workspace.Slice(0, keys.Length);
@@ -107,13 +67,13 @@ namespace Sorted
 
             bool reversed = false;
 
-            if ((keyMask & MSB32U) == 0) numberSystem = NumberSystem.Unsigned; // without the MSB, sign doesn't matter
+            if ((keyMask & Util.MSB32U) == 0) numberSystem = NumberSystem.Unsigned; // without the MSB, sign doesn't matter
             if (numberSystem == NumberSystem.SignBit)
             {
                 // sort *just* on the MSB
-                var split = SortCore32(keys, workspace, 1, MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
+                var split = SortCore32(keys, workspace, 1, Util.MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
                 if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
-                keyMask &= ~MSB32U;
+                keyMask &= ~Util.MSB32U;
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
@@ -165,22 +125,22 @@ namespace Sorted
                 }
 
                 if (ascending)
-                    BucketCountAscending(countsOffsets, keys, 0, len, shift, groupMask);
+                    Util.BucketCountAscending(countsOffsets, keys, 0, len, shift, groupMask);
                 else
-                    BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask);
+                    Util.BucketCountDescending(countsOffsets, keys, 0, len, shift, groupMask);
 
                 // the "split" is a trick used to sort IEEE754; tells us how many positive/negative
                 // numbers we have (since we do a cheeky split on r=1/c=31); this allows us to to
                 // two *inner* radix sorts on the rest of the bits
                 split = (int)countsOffsets[1];
 
-                if (!ComputeOffsets(countsOffsets, len, c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
+                if (!Util.ComputeOffsets(countsOffsets, len, c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
 
 
                 if (ascending)
-                    ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
+                    Util.ApplyAscending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
                 else
-                    ApplyDescending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
+                    Util.ApplyDescending(countsOffsets, keys, workspace, 0, len, shift, groupMask);
 
                 Swap(ref keys, ref workspace, ref reversed);
             }
@@ -195,32 +155,6 @@ namespace Sorted
             return mod == 0 ? 1 << (r - 1) : 1 << (mod - 1);
         }
 
-        static bool ComputeOffsets(Span<uint> countsOffsets, int length, int bucketOffset)
-        {
-            uint offset = 0;
-            int bucketCount = countsOffsets.Length;
-            for (int i = bucketOffset; i < bucketCount; i++)
-            {
-                var prev = offset;
-                var grpCount = countsOffsets[i];
-                if (grpCount == length) return false;
-                offset += grpCount;
-                countsOffsets[i] = prev;
-            }
-            for (int i = 0; i < bucketOffset; i++)
-            {
-                var prev = offset;
-                var grpCount = countsOffsets[i];
-                if (grpCount == length) return false;
-                offset += grpCount;
-                countsOffsets[i] = prev;
-            }
-            return true;
-        }
-
-        private static void CheckR(int count, int r = DEFAULT_R)
-        {
-            if (r < 1 || r > MAX_R) throw new ArgumentOutOfRangeException(nameof(r));
-        }
+        
     }
 }

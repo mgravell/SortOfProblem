@@ -7,7 +7,7 @@ namespace Sorted
 {
     public static partial class LsdRadixSort
     {
-        public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = DEFAULT_R, bool descending = false) where T : struct
+        public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = Util.DEFAULT_R, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
             {
@@ -21,7 +21,7 @@ namespace Sorted
             }
         }
 
-        public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
+        public static int ParallelSort(this Memory<uint> keys, Memory<uint> workspace, int r = Util.DEFAULT_R, bool descending = false, uint mask = uint.MaxValue)
             => ParallelSort32<uint>(keys, workspace, r, descending, mask, NumberSystem.Unsigned);
 
 
@@ -72,9 +72,9 @@ namespace Sorted
                             var keys = _keys.Span.NonPortableCast<T, uint>();
                             var buckets = CountsOffsets(batchIndex);
                             if (step == WorkerStep.BucketCountAscending)
-                                BucketCountAscending(buckets, keys, start, end, _shift, _groupMask);
+                                Util.BucketCountAscending(buckets, keys, start, end, _shift, _groupMask);
                             else
-                                BucketCountDescending(buckets, keys, start, end, _shift, _groupMask);
+                                Util.BucketCountDescending(buckets, keys, start, end, _shift, _groupMask);
                         }
                         break;
                     case WorkerStep.ApplyAscending:
@@ -86,9 +86,9 @@ namespace Sorted
                                 var keys = _keys.Span.NonPortableCast<T, uint>();
                                 var workspace = _workspace.Span.NonPortableCast<T, uint>();
                                 if (step == WorkerStep.ApplyAscending)
-                                    ApplyAscending(offsets, keys, workspace, start, end, _shift, _groupMask);
+                                    Util.ApplyAscending(offsets, keys, workspace, start, end, _shift, _groupMask);
                                 else
-                                    ApplyDescending(offsets, keys, workspace, start, end, _shift, _groupMask);
+                                    Util.ApplyDescending(offsets, keys, workspace, start, end, _shift, _groupMask);
                             }
                             else
                             {
@@ -211,22 +211,15 @@ namespace Sorted
                 }
             }
         }
-        static readonly int MaxWorkerCount = Environment.ProcessorCount;
-
-        private static int WorkerCount(int count)
-        {
-            if (count <= 0) return 0;
-            return Math.Min(((count - 1) / 1024) + 1, MaxWorkerCount);
-        }
 
         private static unsafe int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
             int r, bool descending, uint keyMask, NumberSystem numberSystem) where T : struct
         {
-            CheckR(r);
+            Util.CheckR(r);
             int bucketCount = 1 << r, len = keys.Length;
             if (len <= 1 || keyMask == 0) return 0;
 
-            int workerCount = WorkerCount(len);
+            int workerCount = Util.WorkerCount(len);
             // a shame that we nned to use "unsafe" for this, but we can't put a Span<uint> as
             // a field on the worker; however: the stack *won't* move, so this is in fact
             // perfectly safe, despite what it looks like

@@ -9,7 +9,7 @@ namespace Sorted
         TwosComplement, // example: int/long
         SignBit // example: float/double
     }
-    internal static class NumberSystem<T>
+    public static class NumberSystem<T>
     {
         private static NumberSystem? _value;
         internal static NumberSystem Value => _value
@@ -35,7 +35,7 @@ namespace Sorted
                 typeof(T) == typeof(double)
                 ) _value = NumberSystem.SignBit;   
         }
-        internal static void Set(NumberSystem numberSystem)
+        public static void Set(NumberSystem numberSystem)
         {
             var existing = _value;
             if (existing == null)
