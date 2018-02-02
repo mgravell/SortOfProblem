@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 
 namespace Sorted
 {
@@ -15,6 +16,7 @@ namespace Sorted
         internal static NumberSystem Value => _value
             ?? throw new InvalidOperationException($"No number-system is defined for '{typeof(T).Name}'");
 
+        public static int Length => Unsafe.SizeOf<T>();
         static NumberSystem()
         {
             if (typeof(T) == typeof(sbyte) ||

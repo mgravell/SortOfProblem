@@ -60,17 +60,17 @@ namespace Sorted
 
             Span<uint> buckets = stackalloc uint[1 << r];
             if (ascending)
-                Util.BucketCountAscending(buckets, keys, start, end, shift, groupMask);
+                Util.BucketCountAscending32(buckets, keys, start, end, shift, groupMask);
             else
-                Util.BucketCountDescending(buckets, keys, start, end, shift, groupMask);
+                Util.BucketCountDescending32(buckets, keys, start, end, shift, groupMask);
 
             buckets.CopyTo(offsets);
             if (Util.ComputeOffsets(offsets, end - start, 0, (uint)start))
             {
                 if (ascending)
-                    Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
+                    Util.ApplyAscending32(offsets, keys, workspace, start, end, shift, groupMask);
                 else
-                    Util.ApplyAscending(offsets, keys, workspace, start, end, shift, groupMask);
+                    Util.ApplyAscending32(offsets, keys, workspace, start, end, shift, groupMask);
                 workspace.Slice(start, end - start).CopyTo(keys.Slice(start, end - start));
             }
 

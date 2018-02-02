@@ -7,7 +7,9 @@ namespace Sorted
     {
         internal const int MSB32 = 1 << 31;
         internal const uint MSB32U = 1U << 31;
-        
+        internal const long MSB64 = 1L << 63;
+        internal const ulong MSB64U = 1UL << 63;
+
         internal static int WorkerCount(int count)
         {
             int groupCount = ((count - 1) / 1024) + 1;
@@ -30,14 +32,29 @@ namespace Sorted
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void BucketCountAscending(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
+        internal static void BucketCountAscending32(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
         {
             buckets.Clear();
             for (int i = start; i < end; i++)
                 buckets[(int)((keys[i] >> shift) & groupMask)]++;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void BucketCountDescending(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
+        internal static void BucketCountDescending32(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((~keys[i] >> shift) & groupMask)]++;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCountAscending64(Span<uint> buckets, Span<ulong> keys, int start, int end, int shift, ulong groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((keys[i] >> shift) & groupMask)]++;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCountDescending64(Span<uint> buckets, Span<ulong> keys, int start, int end, int shift, ulong groupMask)
         {
             buckets.Clear();
             for (int i = start; i < end; i++)
@@ -67,7 +84,7 @@ namespace Sorted
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ApplyAscending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
+        internal static void ApplyAscending32(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
                int start, int end, int shift, uint groupMask)
         {
             for (int i = start; i < end; i++)
@@ -77,8 +94,29 @@ namespace Sorted
             }
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ApplyDescending(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
+        internal static void ApplyDescending32(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
             int start, int end, int shift, uint groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((~keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ApplyAscending64(Span<uint> offsets, Span<ulong> keys, Span<ulong> workspace,
+       int start, int end, int shift, ulong groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ApplyDescending64(Span<uint> offsets, Span<ulong> keys, Span<ulong> workspace,
+            int start, int end, int shift, ulong groupMask)
         {
             for (int i = start; i < end; i++)
             {

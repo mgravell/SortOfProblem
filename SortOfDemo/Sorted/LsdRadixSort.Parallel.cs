@@ -72,9 +72,9 @@ namespace Sorted
                             var keys = _keys.Span.NonPortableCast<T, uint>();
                             var buckets = CountsOffsets(batchIndex);
                             if (step == WorkerStep.BucketCountAscending)
-                                Util.BucketCountAscending(buckets, keys, start, end, _shift, _groupMask);
+                                Util.BucketCountAscending32(buckets, keys, start, end, _shift, _groupMask);
                             else
-                                Util.BucketCountDescending(buckets, keys, start, end, _shift, _groupMask);
+                                Util.BucketCountDescending32(buckets, keys, start, end, _shift, _groupMask);
                         }
                         break;
                     case WorkerStep.ApplyAscending:
@@ -86,9 +86,9 @@ namespace Sorted
                                 var keys = _keys.Span.NonPortableCast<T, uint>();
                                 var workspace = _workspace.Span.NonPortableCast<T, uint>();
                                 if (step == WorkerStep.ApplyAscending)
-                                    Util.ApplyAscending(offsets, keys, workspace, start, end, _shift, _groupMask);
+                                    Util.ApplyAscending32(offsets, keys, workspace, start, end, _shift, _groupMask);
                                 else
-                                    Util.ApplyDescending(offsets, keys, workspace, start, end, _shift, _groupMask);
+                                    Util.ApplyDescending32(offsets, keys, workspace, start, end, _shift, _groupMask);
                             }
                             else
                             {

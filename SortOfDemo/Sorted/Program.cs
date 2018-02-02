@@ -67,15 +67,122 @@ namespace Sorted
             uint[] origUInt32 = new uint[origFloat.Length], valsUInt32 = new uint[origFloat.Length];
             int[] origInt32 = new int[origFloat.Length], valsInt32 = new int[origFloat.Length];
 
+            ulong[] origUInt64 = new ulong[origFloat.Length], valsUInt64 = new ulong[origFloat.Length];
+            long[] origInt64 = new long[origFloat.Length], valsInt64 = new long[origFloat.Length];
+            double[] origDouble = new double[origFloat.Length], valsDouble = new double[origFloat.Length];
+
             for (int i = 0; i < origFloat.Length; i++)
             {
-                origFloat[i] = (float)((rand.NextDouble() * 50000) - 15000);
+                var x = ((rand.NextDouble() * 50000) - 15000);
+                origFloat[i] = (float)x;
                 int ival = rand.Next(int.MinValue, int.MaxValue);
                 origInt32[i] = ival;
                 origUInt32[i] = unchecked((uint)ival);
+                long lo = rand.Next(int.MinValue, int.MaxValue), hi = rand.Next(int.MinValue, int.MaxValue);
+                origInt64[i] = ((hi << 32) | lo);
+                origUInt64[i] = (ulong)((hi << 32) | lo);
+                origDouble[i] = x;
             }
             var wFloat = new float[origFloat.Length];
+            var w64 = new ulong[origFloat.Length];
             Console.WriteLine($"Workspace length: {wFloat.Length}");
+
+
+            Console.WriteLine();
+            Console.WriteLine(">> ulong <<");
+            Console.WriteLine();
+            var wUInt64 = new Span<ulong>(w64);
+            for (int i = 0; i < LOOP; i++)
+            {
+                origUInt64.CopyTo(valsUInt64, 0);
+                using (new BasicTimer("RadixSort.Sort/64"))
+                {
+                    LsdRadixSort.Sort<ulong>(valsUInt64, wUInt64);
+                }
+                CheckSort<ulong>(valsUInt64);
+            }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origUInt64.CopyTo(valsUInt64, 0);
+                using (new BasicTimer("RadixSort.Sort/64/descending"))
+                {
+                    LsdRadixSort.Sort<ulong>(valsUInt64, wUInt64, descending: true);
+                }
+                CheckSortDescending<ulong>(valsUInt64);
+            }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origUInt64.CopyTo(valsUInt64, 0);
+                using (new BasicTimer("Array.Sort/64"))
+                {
+                    Array.Sort<ulong>(valsUInt64);
+                }
+                CheckSort<ulong>(valsUInt64);
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(">> long <<");
+            Console.WriteLine();
+            var wInt64 = wUInt64.NonPortableCast<ulong, long>();
+            for (int i = 0; i < LOOP; i++)
+            {
+                origInt64.CopyTo(valsInt64, 0);
+                using (new BasicTimer("RadixSort.Sort/64"))
+                {
+                    LsdRadixSort.Sort<long>(valsInt64, wInt64);
+                }
+                CheckSort<long>(valsInt64);
+            }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origInt64.CopyTo(valsInt64, 0);
+                using (new BasicTimer("RadixSort.Sort/64/descending"))
+                {
+                    LsdRadixSort.Sort<long>(valsInt64, wInt64, descending: true);
+                }
+                CheckSortDescending<long>(valsInt64);
+            }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origInt64.CopyTo(valsInt64, 0);
+                using (new BasicTimer("Array.Sort/64"))
+                {
+                    Array.Sort<long>(valsInt64);
+                }
+                CheckSort<long>(valsInt64);
+            }
+
+            Console.WriteLine();
+            Console.WriteLine(">> double <<");
+            Console.WriteLine();
+            var wDouble = wUInt64.NonPortableCast<ulong, double>();
+            for (int i = 0; i < LOOP; i++)
+            {
+                origDouble.CopyTo(valsDouble, 0);
+                using (new BasicTimer("RadixSort.Sort/64"))
+                {
+                    LsdRadixSort.Sort<double>(valsDouble, wDouble);
+                }
+                CheckSort<double>(valsDouble);
+            }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origDouble.CopyTo(valsDouble, 0);
+                using (new BasicTimer("RadixSort.Sort/64/descending"))
+                {
+                    LsdRadixSort.Sort<double>(valsDouble, wDouble, descending: true);
+                }
+                CheckSortDescending<double>(valsDouble);
+            }
+            for (int i = 0; i < LOOP; i++)
+            {
+                origDouble.CopyTo(valsDouble, 0);
+                using (new BasicTimer("Array.Sort/64"))
+                {
+                    Array.Sort<double>(valsDouble);
+                }
+                CheckSort<double>(valsDouble);
+            }
 
             //Console.WriteLine();
             //Console.WriteLine(">> float <<");
@@ -266,6 +373,7 @@ namespace Sorted
             //    CheckSortDescending<int>(valsInt32);
             //}
 
+
             Console.WriteLine();
             Console.WriteLine(">> uint <<");
             Console.WriteLine();
@@ -322,15 +430,15 @@ namespace Sorted
                 }
                 CheckSortDescending<uint>(valsUInt32);
             }
-            for (int i = 0; i < LOOP; i++)
-            {
-                origUInt32.CopyTo(valsUInt32, 0);
-                using (new BasicTimer("MSD RadixSort.Sort/descending"))
-                {
-                    MsdRadixSort.Sort<uint>(valsUInt32, wUint, descending: true);
-                }
-                CheckSortDescending<uint>(valsUInt32);
-            }
+            //for (int i = 0; i < LOOP; i++)
+            //{
+            //    origUInt32.CopyTo(valsUInt32, 0);
+            //    using (new BasicTimer("MSD RadixSort.Sort/descending"))
+            //    {
+            //        MsdRadixSort.Sort<uint>(valsUInt32, wUint, descending: true);
+            //    }
+            //    CheckSortDescending<uint>(valsUInt32);
+            //}
             var memu32 = new uint[wFloat.Length];
             for (int i = 0; i < LOOP; i++)
             {
