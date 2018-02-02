@@ -136,6 +136,9 @@ namespace ElideBoundsCheckBenchmark
         public void Branchless() => ViaBlockHelper<BranchlessBlockHelper>();
 
         [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
+        public void UInt64() => ViaBlockHelper<UInt64BlockHelper>();
+
+        [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
         public void Vectorized() => ViaBlockHelper<VectorizedBlockHelper>();
 
         [Benchmark(OperationsPerInvoke = OpsPerInvoke)]
@@ -223,6 +226,34 @@ namespace ElideBoundsCheckBenchmark
                     destination[i] =
                         (ifNeg & (raw ^ ~MSB)) // true
                         | (~ifNeg & raw);      // false
+                }
+            }
+        }
+
+        sealed class UInt64BlockHelper : SomeBlockHelperBase
+        {
+            public override void ToRadix(Span<uint> values, Span<uint> destination)
+            {
+                const ulong MSBHIGH = (ulong)1U << 63;
+                const ulong MSBLOW = (ulong)1U << 31;
+                const ulong MASKHIGH = ulong.MaxValue << 32;
+                const ulong MASKLOW = ulong.MaxValue >> 32;
+
+                var longValues = values.NonPortableCast<uint, ulong>();
+                var longDest = destination.NonPortableCast<uint, ulong>();
+
+                for (var i = 0; i < longValues.Length; i++)
+                {
+                    var raw = longValues[i];
+                    var ifNegHigh = (ulong)((long)raw >> 63);
+                    var ifNegLow = (ulong)((long)raw << 32 >> 63);
+                    longDest[i] =
+                        ((ifNegHigh & (~raw | MSBHIGH))
+                        | ~ifNegHigh & raw
+                        | MASKLOW) &
+                        ((ifNegLow & (~raw | MSBLOW))
+                        | ~ifNegLow & raw
+                        | MASKHIGH);
                 }
             }
         }
