@@ -33,7 +33,7 @@ namespace Sorted
             
             if (ascending ? Util.ShortSortAscending(keys, 0, (uint)keys.Length) : Util.ShortSortDescending(keys, 0, (uint)keys.Length))
             {
-                r = Util.ChooseBitCount(r, DefaultR);
+                r = Util.ChooseBitCount<uint>(r, DefaultR);
                 workspace = workspace.Slice(0, keys.Length);
 
                 if (keyMask == 0) return;

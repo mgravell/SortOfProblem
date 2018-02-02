@@ -5,6 +5,10 @@ namespace Sorted
 {
     internal static class Util
     {
+        internal const sbyte MSB8 = unchecked((sbyte)(1 << 7));
+        internal const byte MSB8U = 1 << 7;
+        internal const short MSB16 = unchecked((short)(1 << 15));
+        internal const ushort MSB16U = 1 << 15;
         internal const int MSB32 = 1 << 31;
         internal const uint MSB32U = 1U << 31;
         internal const long MSB64 = 1L << 63;
@@ -23,14 +27,43 @@ namespace Sorted
         private readonly static int _processorCount = Environment.ProcessorCount;
         public static int MaxWorkerCount { get; set; }
 
-        
-        internal static int ChooseBitCount(int r, int @default)
+
+        internal static int ChooseBitCount<T>(int r, int @default)
         {
-            if (r < 1) return ChooseBitCount(@default, 8);
+            if (r > Unsafe.SizeOf<T>()) r = Unsafe.SizeOf<T>();
+            if (r < 1) return ChooseBitCount<T>(@default, 8);
             if (r > 16) return 16;
             return r;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCountAscending8(Span<uint> buckets, Span<byte> keys, int start, int end, int shift, byte groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((keys[i] >> shift) & groupMask)]++;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCountDescending8(Span<uint> buckets, Span<byte> keys, int start, int end, int shift, byte groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((~keys[i] >> shift) & groupMask)]++;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCountAscending16(Span<uint> buckets, Span<ushort> keys, int start, int end, int shift, ushort groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((keys[i] >> shift) & groupMask)]++;
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCountDescending16(Span<uint> buckets, Span<ushort> keys, int start, int end, int shift, ushort groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((~keys[i] >> shift) & groupMask)]++;
+        }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void BucketCountAscending32(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
         {
@@ -84,6 +117,46 @@ namespace Sorted
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ApplyAscending8(Span<uint> offsets, Span<byte> keys, Span<byte> workspace,
+       int start, int end, int shift, byte groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ApplyDescending8(Span<uint> offsets, Span<byte> keys, Span<byte> workspace,
+            int start, int end, int shift, byte groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((~keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ApplyAscending16(Span<uint> offsets, Span<ushort> keys, Span<ushort> workspace,
+       int start, int end, int shift, ushort groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void ApplyDescending16(Span<uint> offsets, Span<ushort> keys, Span<ushort> workspace,
+            int start, int end, int shift, ushort groupMask)
+        {
+            for (int i = start; i < end; i++)
+            {
+                var j = offsets[(int)((~keys[i] >> shift) & groupMask)]++;
+                workspace[(int)j] = keys[i];
+            }
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void ApplyAscending32(Span<uint> offsets, Span<uint> keys, Span<uint> workspace,
                int start, int end, int shift, uint groupMask)
         {
@@ -128,7 +201,7 @@ namespace Sorted
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool ShortSortAscending(Span<uint> keys, int offset, uint count)
         {
-            switch(count)
+            switch (count)
             {
                 case 0:
                 case 1:

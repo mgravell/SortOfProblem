@@ -115,7 +115,7 @@ namespace Sorted
         private static void Sort32(uint* keys, uint* workspace, int len, int r, uint keyMask, bool ascending, NumberSystem numberSystem)
         {
             if (len <= 1 || keyMask == 0) return;
-            r = Util.ChooseBitCount(r, DefaultR);
+            r = Util.ChooseBitCount<uint>(r, DefaultR);
             
             int countLength = 1 << r;
             int groups = GroupCount<uint>(r);

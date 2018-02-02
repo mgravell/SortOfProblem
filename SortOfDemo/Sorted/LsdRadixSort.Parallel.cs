@@ -215,7 +215,7 @@ namespace Sorted
         private static unsafe int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
             int r, bool descending, uint keyMask, NumberSystem numberSystem) where T : struct
         {
-            r = Util.ChooseBitCount(r, DefaultR);
+            r = Util.ChooseBitCount<uint>(r, DefaultR);
             int bucketCount = 1 << r, len = keys.Length;
             if (len <= 1 || keyMask == 0) return 0;
 

@@ -74,6 +74,7 @@ namespace Sorted
             for (int i = 0; i < origFloat.Length; i++)
             {
                 var x = ((rand.NextDouble() * 50000) - 15000);
+                origDouble[i] = x;
                 origFloat[i] = (float)x;
                 int ival = rand.Next(int.MinValue, int.MaxValue);
                 origInt32[i] = ival;
@@ -81,7 +82,6 @@ namespace Sorted
                 long lo = rand.Next(int.MinValue, int.MaxValue), hi = rand.Next(int.MinValue, int.MaxValue);
                 origInt64[i] = ((hi << 32) | lo);
                 origUInt64[i] = (ulong)((hi << 32) | lo);
-                origDouble[i] = x;
             }
             var wFloat = new float[origFloat.Length];
             var w64 = new ulong[origFloat.Length];
