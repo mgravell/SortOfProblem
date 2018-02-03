@@ -83,7 +83,7 @@ namespace Sorted
                     case WorkerStep.ApplyDescending:
                         {
                             var offsets = CountsOffsets(batchIndex);
-                            if (NeedsApply(offsets, _keys.Length))
+                            if (NeedsApply(offsets, _keys.Length, _bucketOffset))
                             {
                                 var keys = _keys.Span.NonPortableCast<T, uint>();
                                 var workspace = _workspace.Span.NonPortableCast<T, uint>();
@@ -104,19 +104,28 @@ namespace Sorted
 
             }
 
-            private static bool NeedsApply(Span<uint> offsets, int length)
+            private static bool NeedsApply(Span<uint> offsets, int length, int bucketOffset)
             {
                 var activeGroups = 0;
-                var offset = offsets[0];
-                for (int i = 1; i < offsets.Length; i++)
+                // look at ComputeOffsets for the double-range reason; basically, this
+                // checks each set of adjacent offsets to see there's an active group; if we
+                // don't have at least 2 active groups, there's nothing to apply
+                var offset = offsets[bucketOffset];
+                for (int i = bucketOffset + 1; i < offsets.Length; i++)
+                {
+                    if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
+                }
+                for (int i = 0; i < bucketOffset; i++)
                 {
                     if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
                 }
                 return offset != length && ++activeGroups == 2;
             }
 
+            int _bucketOffset;
             public bool ComputeOffsets(int bucketOffset)
             {
+                _bucketOffset = bucketOffset;
                 var allBuckets = AllCountsOffsets();
                 int bucketCount = _bucketCount,
                     batchCount = allBuckets.Length / bucketCount,
