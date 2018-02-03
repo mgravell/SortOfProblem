@@ -83,7 +83,7 @@ namespace Sorted
                     case WorkerStep.ApplyDescending:
                         {
                             var offsets = CountsOffsets(batchIndex);
-                            if (NeedsApply(offsets))
+                            if (NeedsApply(offsets, _keys.Length))
                             {
                                 var keys = _keys.Span.NonPortableCast<T, uint>();
                                 var workspace = _workspace.Span.NonPortableCast<T, uint>();
@@ -104,16 +104,15 @@ namespace Sorted
 
             }
 
-            private static bool NeedsApply(Span<uint> offsets)
+            private static bool NeedsApply(Span<uint> offsets, int length)
             {
-                return true;
-                //var activeGroups = 0;
-                //var offset = offsets[0];
-                //for (int i = 1; i < offsets.Length; i++)
-                //{
-                //    if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
-                //}
-                //return false;
+                var activeGroups = 0;
+                var offset = offsets[0];
+                for (int i = 1; i < offsets.Length; i++)
+                {
+                    if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
+                }
+                return offset != length && ++activeGroups == 2;
             }
 
             public bool ComputeOffsets(int bucketOffset)
