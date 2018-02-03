@@ -54,27 +54,6 @@ namespace Sorted
         public static void Sort(this Span<uint> keys, Span<uint> workspace, int r = default, bool descending = false, uint mask = uint.MaxValue)
             => Sort32(keys, workspace, r, mask, !descending, NumberSystem.Unsigned);
 
-        static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
-        {
-            var tmp = x;
-            x = y;
-            y = tmp;
-            reversed = !reversed;
-        }
-        static void Swap<T>(ref T x, ref T y)
-        {
-            var tmp = x;
-            x = y;
-            y = tmp;
-        }
-
-
-        static int GroupCount<T>(int r)
-        {
-            int bits = Unsafe.SizeOf<T>() << 3;
-            return ((bits - 1) / r) + 1;
-        }
-
         public static int DefaultR { get; set; }
 
 
@@ -86,7 +65,7 @@ namespace Sorted
             int countLength = 1 << r;
             Span<uint> countsOffsets = stackalloc uint[countLength];
             workspace = workspace.Slice(0, keys.Length);
-            int groups = GroupCount<byte>(r);
+            int groups = Util.GroupCount<byte>(r);
             byte mask = (byte)(countLength - 1);
 
             bool reversed = false;
@@ -96,34 +75,34 @@ namespace Sorted
             {
                 // sort *just* on the MSB
                 var split = SortCore8(keys, workspace, 1, Util.MSB8U, 2, countsOffsets.Slice(0, 2), 8, 1, ascending, true, 7);
-                if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                if (split.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 keyMask = (byte)(keyMask & ~Util.MSB8U);
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
-                var lower = split.Split == 0 ? default : SortCore8(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
-                var upper = split.Split == keys.Length ? default : SortCore8(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
+                var lower = split.Split <= 1 ? default : SortCore8(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
+                var upper = split.Split >= keys.Length - 1 ? default : SortCore8(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
 
                 if (lower.Reversed == upper.Reversed)
                 { // both or neither reversed
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else if (split.Split < (keys.Length / 2)) // lower group is smaller
                 {
                     if (split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
                     // the lower-half is now in both spaces; respect the opinion of the upper-half 
-                    if (upper.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (upper.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else // upper group is smaller
                 {
                     if (split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
                     // the upper-half is now in both spaces; respect the opinion of the lower-half 
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
             }
             else if (SortCore8(keys, workspace, r, keyMask, countLength, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned).Reversed)
             {
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
 
             if (reversed) keys.CopyTo(workspace);
@@ -136,7 +115,7 @@ namespace Sorted
             int countLength = 1 << r;
             Span<uint> countsOffsets = stackalloc uint[countLength];
             workspace = workspace.Slice(0, keys.Length);
-            int groups = GroupCount<ushort>(r);
+            int groups = Util.GroupCount<ushort>(r);
             ushort mask = (ushort)(countLength - 1);
 
             bool reversed = false;
@@ -146,34 +125,34 @@ namespace Sorted
             {
                 // sort *just* on the MSB
                 var split = SortCore16(keys, workspace, 1, Util.MSB16U, 2, countsOffsets.Slice(0, 2), 16, 1, ascending, true, 15);
-                if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                if (split.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 keyMask = (ushort)(keyMask & ~Util.MSB16U);
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
-                var lower = split.Split == 0 ? default : SortCore16(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
-                var upper = split.Split == keys.Length ? default : SortCore16(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
+                var lower = split.Split <= 1 ? default : SortCore16(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
+                var upper = split.Split >= keys.Length - 1 ? default : SortCore16(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
 
                 if (lower.Reversed == upper.Reversed)
                 { // both or neither reversed
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else if (split.Split < (keys.Length / 2)) // lower group is smaller
                 {
                     if (split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
                     // the lower-half is now in both spaces; respect the opinion of the upper-half 
-                    if (upper.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (upper.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else // upper group is smaller
                 {
                     if (split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
                     // the upper-half is now in both spaces; respect the opinion of the lower-half 
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
             }
             else if (SortCore16(keys, workspace, r, keyMask, countLength, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned).Reversed)
             {
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
 
             if (reversed) keys.CopyTo(workspace);
@@ -186,7 +165,7 @@ namespace Sorted
             int countLength = 1 << r;
             Span<uint> countsOffsets = stackalloc uint[countLength];
             workspace = workspace.Slice(0, keys.Length);
-            int groups = GroupCount<uint>(r);
+            int groups = Util.GroupCount<uint>(r);
             uint mask = (uint)(countLength - 1);
 
             bool reversed = false;
@@ -196,34 +175,34 @@ namespace Sorted
             {
                 // sort *just* on the MSB
                 var split = SortCore32(keys, workspace, 1, Util.MSB32U, 2, countsOffsets.Slice(0, 2), 32, 1, ascending, true, 31);
-                if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                if (split.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 keyMask &= ~Util.MSB32U;
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
-                var lower = split.Split == 0 ? default : SortCore32(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
-                var upper = split.Split == keys.Length ? default : SortCore32(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
+                var lower = split.Split <= 1 ? default : SortCore32(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
+                var upper = split.Split >= keys.Length - 1 ? default : SortCore32(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
 
                 if (lower.Reversed == upper.Reversed)
                 { // both or neither reversed
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else if (split.Split < (keys.Length / 2)) // lower group is smaller
                 {
                     if (split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
                     // the lower-half is now in both spaces; respect the opinion of the upper-half 
-                    if (upper.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (upper.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else // upper group is smaller
                 {
                     if (split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
                     // the upper-half is now in both spaces; respect the opinion of the lower-half 
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
             }
             else if (SortCore32(keys, workspace, r, keyMask, countLength, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned).Reversed)
             {
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
 
             if (reversed) keys.CopyTo(workspace);
@@ -237,7 +216,7 @@ namespace Sorted
             int countLength = 1 << r;
             Span<uint> countsOffsets = stackalloc uint[countLength];
             workspace = workspace.Slice(0, keys.Length);
-            int groups = GroupCount<ulong>(r);
+            int groups = Util.GroupCount<ulong>(r);
             ulong mask = (ulong)(countLength - 1);
 
             bool reversed = false;
@@ -247,34 +226,34 @@ namespace Sorted
             {
                 // sort *just* on the MSB
                 var split = SortCore64(keys, workspace, 1, Util.MSB64U, 2, countsOffsets.Slice(0, 2), 64, 1, ascending, true, 63);
-                if (split.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                if (split.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 keyMask &= ~Util.MSB64U;
 
                 // now sort the two chunks separately, respecting the corresponding data/workspace areas
                 // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
-                var lower = split.Split == 0 ? default : SortCore64(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
-                var upper = split.Split == keys.Length ? default : SortCore64(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
+                var lower = split.Split <= 1 ? default : SortCore64(keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, keyMask, countLength, countsOffsets, groups, mask, false, false);
+                var upper = split.Split >= keys.Length - 1 ? default : SortCore64(keys.Slice(split.Split), workspace.Slice(split.Split), r, keyMask, countLength, countsOffsets, groups, mask, true, false);
 
                 if (lower.Reversed == upper.Reversed)
                 { // both or neither reversed
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else if (split.Split < (keys.Length / 2)) // lower group is smaller
                 {
                     if (split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
                     // the lower-half is now in both spaces; respect the opinion of the upper-half 
-                    if (upper.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (upper.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
                 else // upper group is smaller
                 {
                     if (split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
                     // the upper-half is now in both spaces; respect the opinion of the lower-half 
-                    if (lower.Reversed) Swap(ref keys, ref workspace, ref reversed);
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
                 }
             }
             else if (SortCore64(keys, workspace, r, keyMask, countLength, countsOffsets, groups, mask, ascending, numberSystem != NumberSystem.Unsigned).Reversed)
             {
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
 
             if (reversed) keys.CopyTo(workspace);
@@ -317,7 +296,7 @@ namespace Sorted
                 else
                     Util.ApplyDescending8(countsOffsets, keys, workspace, 0, len, shift, groupMask);
 
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
             return (reversed, split);
         }
@@ -359,7 +338,7 @@ namespace Sorted
                 else
                     Util.ApplyDescending16(countsOffsets, keys, workspace, 0, len, shift, groupMask);
 
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
             return (reversed, split);
         }
@@ -400,7 +379,7 @@ namespace Sorted
                 else
                     Util.ApplyDescending32(countsOffsets, keys, workspace, 0, len, shift, groupMask);
 
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
             return (reversed, split);
         }
@@ -442,7 +421,7 @@ namespace Sorted
                 else
                     Util.ApplyDescending64(countsOffsets, keys, workspace, 0, len, shift, groupMask);
 
-                Swap(ref keys, ref workspace, ref reversed);
+                Util.Swap(ref keys, ref workspace, ref reversed);
             }
             return (reversed, split);
         }

@@ -14,23 +14,21 @@ namespace Sorted
         internal const long MSB64 = 1L << 63;
         internal const ulong MSB64U = 1UL << 63;
 
-        internal static int WorkerCount(int count)
+        internal static int WorkerCount(int count, int maxCount)
         {
             int groupCount = ((count - 1) / 1024) + 1;
             if (groupCount <= 1) return 1;
 
-            int maxCount = MaxWorkerCount;
             if (maxCount <= 0 || maxCount > _processorCount)
                 maxCount = _processorCount;
             return Math.Min(groupCount, maxCount);
         }
         private readonly static int _processorCount = Environment.ProcessorCount;
-        public static int MaxWorkerCount { get; set; }
-
 
         internal static int ChooseBitCount<T>(int r, int @default)
         {
-            if (r > Unsafe.SizeOf<T>()) r = Unsafe.SizeOf<T>();
+            var tBits = Unsafe.SizeOf<T>() << 3;
+            if (r > tBits) r = tBits;
             if (r < 1) return ChooseBitCount<T>(@default, 8);
             if (r > 16) return 16;
             return r;
@@ -365,6 +363,32 @@ namespace Sorted
                 a = b;
                 b = a;
             }
+        }
+
+        public static void Swap<T>(ref Span<T> x, ref Span<T> y, ref bool reversed) where T : struct
+        {
+            var tmp = x;
+            x = y;
+            y = tmp;
+            reversed = !reversed;
+        }
+        public static void Swap<T>(ref Memory<T> x, ref Memory<T> y, ref bool reversed) where T : struct
+        {
+            var tmp = x;
+            x = y;
+            y = tmp;
+            reversed = !reversed;
+        }
+        public static void Swap<T>(ref T x, ref T y)
+        {
+            var tmp = x;
+            x = y;
+            y = tmp;
+        }
+        public static int GroupCount<T>(int r)
+        {
+            int bits = Unsafe.SizeOf<T>() << 3;
+            return ((bits - 1) / r) + 1;
         }
 
         private static void InsertionSortAscending(Span<uint> keys, int start, int end)

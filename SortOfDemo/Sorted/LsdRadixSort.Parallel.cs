@@ -7,6 +7,8 @@ namespace Sorted
 {
     public static partial class LsdRadixSort
     {
+        public static int MaxWorkerCount { get; set; }
+
         public static int ParallelSort<T>(this Memory<T> keys, Memory<T> workspace, int r = default, bool descending = false) where T : struct
         {
             if (Unsafe.SizeOf<T>() == 4)
@@ -104,13 +106,14 @@ namespace Sorted
 
             private static bool NeedsApply(Span<uint> offsets)
             {
-                var activeGroups = 0;
-                var offset = offsets[0];
-                for (int i = 1; i < offsets.Length; i++)
-                {
-                    if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
-                }
-                return false;
+                return true;
+                //var activeGroups = 0;
+                //var offset = offsets[0];
+                //for (int i = 1; i < offsets.Length; i++)
+                //{
+                //    if (offset != (offset = offsets[i]) && ++activeGroups == 2) return true;
+                //}
+                //return false;
             }
 
             public bool ComputeOffsets(int bucketOffset)
@@ -155,7 +158,8 @@ namespace Sorted
                 return true;
             }
 
-            readonly int _batchSize, _length, _bucketCount, _workerCount;
+            readonly int _workerCount;
+            int _batchSize, _length, _bucketCount;
             unsafe readonly uint* _countsOffsets;
             private unsafe Span<uint> CountsOffsets(int batchIndex) => new Span<uint>(_countsOffsets + (batchIndex * _bucketCount), _bucketCount);
             private unsafe Span<uint> AllCountsOffsets() => new Span<uint>(_countsOffsets, _workerCount * _bucketCount);
@@ -187,20 +191,23 @@ namespace Sorted
                 }
             }
             int _outstandingWorkersNeedsSync;
-            public unsafe Worker(int workerCount, int bucketCount, Memory<T> keys, Memory<T> workspace, uint* countsOffsets)
+
+            public void Prepare(int bucketCount, Memory<T> keys, Memory<T> workspace)
             {
-                if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
-                if (keys.Length != workspace.Length) throw new ArgumentException("Workspace size mismatch", nameof(workspace));
-                _batchSize = ((keys.Length - 1) / workerCount) + 1;
+                _batchSize = ((keys.Length - 1) / _workerCount) + 1;
                 _length = keys.Length;
                 _keys = keys;
                 _workspace = workspace;
-                _countsOffsets = countsOffsets;
                 _bucketCount = bucketCount;
+            }
+            public unsafe Worker(int workerCount, uint* countsOffsets)
+            {
+                if (workerCount <= 0) throw new ArgumentOutOfRangeException(nameof(workerCount));
+                _countsOffsets = countsOffsets;
                 _workerCount = workerCount;
             }
 
-            public void Swap() => LsdRadixSort.Swap(ref _keys, ref _workspace);
+            public void Swap() => Util.Swap(ref _keys, ref _workspace);
 
             internal void SetGroup(uint groupMask, int shift)
             {
@@ -210,6 +217,20 @@ namespace Sorted
                     _shift = shift;
                 }
             }
+
+            internal uint CountOffset(int index)
+            {
+                var allBuckets = AllCountsOffsets();
+                int batchCount = allBuckets.Length / _bucketCount;
+
+                uint sum = 0;
+                for (int i = 0; i < batchCount; i++)
+                {
+                    sum += allBuckets[index];
+                    index += _bucketCount;
+                }
+                return sum;
+            }
         }
 
         private static unsafe int ParallelSort32<T>(Memory<T> keys, Memory<T> workspace,
@@ -218,23 +239,68 @@ namespace Sorted
             r = Util.ChooseBitCount<uint>(r, DefaultR);
             int bucketCount = 1 << r, len = keys.Length;
             if (len <= 1 || keyMask == 0) return 0;
+            
+            workspace = workspace.Slice(0, len);
+            int groups = Util.GroupCount<uint>(r);
+            uint mask = (uint)(bucketCount - 1);
 
-            int workerCount = Util.WorkerCount(len);
+            int workerCount = Util.WorkerCount(keys.Length, MaxWorkerCount);
             // a shame that we nned to use "unsafe" for this, but we can't put a Span<uint> as
             // a field on the worker; however: the stack *won't* move, so this is in fact
             // perfectly safe, despite what it looks like
             uint* workerCountsOffsets = stackalloc uint[workerCount * bucketCount];
 
-            workspace = workspace.Slice(0, len);
-            int groups = GroupCount<uint>(r);
-            uint mask = (uint)(bucketCount - 1);
-
-            var worker = new Worker<T>(workerCount, bucketCount, keys, workspace, workerCountsOffsets);
+            var worker = new Worker<T>(workerCount, workerCountsOffsets);
+            if ((keyMask & Util.MSB32U) == 0) numberSystem = NumberSystem.Unsigned; // without the MSB, sign doesn't matter
 
             bool reversed = false;
-          
-            int invertC = numberSystem != NumberSystem.Unsigned ? groups - 1 : -1;
-            for (int c = 0, shift = 0; c < groups; c++, shift += r)
+            if (numberSystem == NumberSystem.SignBit)
+            {
+                // sort *just* on the MSB
+                var split = ParallelSortCore32(worker, keys, workspace, 1, !descending, Util.MSB32U, true, 2, 32, mask, 31);
+                if (split.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
+                keyMask &= ~Util.MSB32U;
+
+                // now sort the two chunks separately, respecting the corresponding data/workspace areas
+                // note: regardless of asc/desc, we will always want the first chunk to be decreasing magnitude and the second chunk to be increasing magnitude - hence false/true
+                var lower = split.Split <= 1 ? default : ParallelSortCore32(worker, keys.Slice(0, split.Split), workspace.Slice(0, split.Split), r, false, keyMask, false, bucketCount, groups, mask);
+                var upper = split.Split >= keys.Length - 1 ? default : ParallelSortCore32(worker, keys.Slice(split.Split), workspace.Slice(split.Split), r, true, keyMask, false, bucketCount, groups, mask);
+
+                if (lower.Reversed == upper.Reversed)
+                { // both or neither reversed
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
+                }
+                else if (split.Split < (keys.Length / 2)) // lower group is smaller
+                {
+                    if (split.Split != 0) keys.Slice(0, split.Split).CopyTo(workspace.Slice(0, split.Split));
+                    // the lower-half is now in both spaces; respect the opinion of the upper-half 
+                    if (upper.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
+                }
+                else // upper group is smaller
+                {
+                    if (split.Split != keys.Length) keys.Slice(split.Split).CopyTo(workspace.Slice(split.Split));
+                    // the upper-half is now in both spaces; respect the opinion of the lower-half 
+                    if (lower.Reversed) Util.Swap(ref keys, ref workspace, ref reversed);
+                }
+            }
+            else if(ParallelSortCore32(worker, keys, workspace, r, !descending, keyMask, numberSystem != NumberSystem.Unsigned, bucketCount, groups, mask).Reversed)
+            {
+                Util.Swap(ref keys, ref workspace, ref reversed);
+            }
+            if (reversed)
+            {
+                worker.Prepare(bucketCount, keys, workspace);
+                worker.Execute(WorkerStep.Copy);
+            }
+            return workerCount;
+        }
+
+        private static unsafe (bool Reversed, int Split) ParallelSortCore32<T>(Worker<T> worker, Memory<T> keys, Memory<T> workspace, int r, bool ascending, uint keyMask, bool isSigned, int bucketCount, int groups, uint mask, int c = 0) where T : struct
+        {
+            int invertC = isSigned ? groups - 1 : -1, split = -1;
+            bool reversed = false;
+            worker.Prepare(bucketCount, keys, workspace);
+            for (int shift = c * r; c < groups; c++, shift += r)
             {
                 uint groupMask = (keyMask >> shift) & mask;
                 keyMask &= ~(mask << shift); // remove those bits from the keyMask to allow fast exit
@@ -246,15 +312,25 @@ namespace Sorted
 
                 // counting elements of the c-th group
                 worker.SetGroup(groupMask, shift);
-                worker.Execute(descending ? WorkerStep.BucketCountDescending : WorkerStep.BucketCountAscending);
+                worker.Execute(ascending ? WorkerStep.BucketCountAscending : WorkerStep.BucketCountDescending);
+
+                // the "split" is a trick used to sort IEEE754; tells us how many positive/negative
+                // numbers we have (since we do a cheeky split on r=1/c=31); this allows us to to
+                // two *inner* radix sorts on the rest of the bits
+                if (split == -1)
+                {
+                    split = (int)worker.CountOffset(1);
+                }
+
                 if (!worker.ComputeOffsets(c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
 
-                worker.Execute(descending ? WorkerStep.ApplyDescending : WorkerStep.ApplyAscending);
+                worker.Execute(ascending ? WorkerStep.ApplyAscending : WorkerStep.ApplyDescending);
                 worker.Swap();
                 reversed = !reversed;
             }
-            if (reversed) worker.Execute(WorkerStep.Copy);
-            return workerCount;
+
+            if (split < 0) split = 0;
+            return (reversed, split);
         }
     }
 }
