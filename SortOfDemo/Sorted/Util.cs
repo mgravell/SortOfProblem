@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Sorted
@@ -69,6 +70,15 @@ namespace Sorted
             for (int i = start; i < end; i++)
                 buckets[(int)((keys[i] >> shift) & groupMask)]++;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void BucketCount32(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
+        {
+            buckets.Clear();
+            for (int i = start; i < end; i++)
+                buckets[(int)((keys[i] >> shift) & groupMask)]++;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void BucketCountDescending32(Span<uint> buckets, Span<uint> keys, int start, int end, int shift, uint groupMask)
         {
@@ -92,26 +102,86 @@ namespace Sorted
                 buckets[(int)((~keys[i] >> shift) & groupMask)]++;
         }
 
+        internal static bool ComputeOffsets(Span<int> bucketMap, Span<uint> countsOffsets, int length, uint offset = 0)
+        {
+            if (bucketMap.IsEmpty)
+            {
+                for (int i = 0; i < countsOffsets.Length; i++)
+                {
+                    var grpCount = countsOffsets[i];
+                    if (grpCount == length) return false;
+                    countsOffsets[i] = offset;
+                    offset += grpCount;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < countsOffsets.Length; i++)
+                {
+                    var bucket = bucketMap[i];
+                    var grpCount = countsOffsets[bucket];
+                    if (grpCount == length) return false;
+                    countsOffsets[bucket] = offset;
+                    offset += grpCount;
+                }
+            }
+            return length > 1;
+        }
+
         internal static bool ComputeOffsets(Span<uint> countsOffsets, int length, int bucketOffset, uint offset = 0)
         {
             int bucketCount = countsOffsets.Length;
             for (int i = bucketOffset; i < bucketCount; i++)
             {
-                var prev = offset;
                 var grpCount = countsOffsets[i];
                 if (grpCount == length) return false;
+                countsOffsets[i] = offset;
                 offset += grpCount;
-                countsOffsets[i] = prev;
             }
             for (int i = 0; i < bucketOffset; i++)
             {
-                var prev = offset;
                 var grpCount = countsOffsets[i];
                 if (grpCount == length) return false;
+                countsOffsets[i] = offset;
                 offset += grpCount;
-                countsOffsets[i] = prev;
             }
             return length > 1;
+        }
+        public static void BuildBucketMap(Span<int> map, bool ascending)
+        {
+            if (ascending)
+            {
+                for (int i = 0; i < map.Length; i++)
+                    map[i] = i;
+            }
+            else
+            {
+                int bucketIndex = map.Length;
+                for (int i = 0; i < map.Length; i++)
+                    map[i] = --bucketIndex;
+            }
+
+        }
+        public static void BuildFinalSignedBucketMap<T>(Span<int> map, int r, bool ascending)
+        {
+            // we have "bits" bits left to use; the first half of those are the +ves,
+            // the second half (with 1 in the MSB) are the -ves; everything else *shouldn't be touched*
+            int bits = (Unsafe.SizeOf<T>() << 3) % r;
+            if (bits == 0) bits = r;
+            int split = 1 << (bits - 1), index;
+            
+            if(ascending)
+            {
+                index = 0;
+                for (int i = split; i < map.Length; i++) map[index++] = i;
+                for (int i = 0; i < split; i++) map[index++] = i;
+            }
+            else
+            {
+                index = map.Length;
+                for (int i = split; i < map.Length; i++) map[--index] = i;
+                for (int i = 0; i < split; i++) map[--index] = i;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

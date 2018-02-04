@@ -350,7 +350,10 @@ namespace Sorted
             int len = keys.Length;
             int invertC = isSigned ? groups - 1 : -1;
             bool reversed = false;
-            int split = 0;
+            int split = -1;
+            Span<int> bucketMap = (isSigned || !ascending) ? stackalloc int[countLength] : default;
+            Util.BuildBucketMap(bucketMap, ascending);
+
             for (int shift = c * r; c < groups; c++, shift += r)
             {
                 uint groupMask = (keyMask >> shift) & mask;
@@ -360,25 +363,20 @@ namespace Sorted
                     if (keyMask == 0) break;
                     else continue;
                 }
+                Util.BucketCount32(countsOffsets, keys, 0, len, shift, groupMask);
 
-                if (ascending)
-                    Util.BucketCountAscending32(countsOffsets, keys, 0, len, shift, groupMask);
-                else
-                    Util.BucketCountDescending32(countsOffsets, keys, 0, len, shift, groupMask);
+                if (c == invertC)
+                {
+                    Util.BuildFinalSignedBucketMap<uint>(bucketMap, r, ascending);
+                    // the "split" is a trick used to sort IEEE754; tells us how many positive/negative
+                    // numbers we have (since we do a cheeky split on r=1/c=31); this allows us to to
+                    // two *inner* radix sorts on the rest of the bits
+                    split = (int)countsOffsets[bucketMap[0]];
+                }
+                
+                if (!Util.ComputeOffsets(bucketMap, countsOffsets, len)) continue; // all in one group
 
-                // the "split" is a trick used to sort IEEE754; tells us how many positive/negative
-                // numbers we have (since we do a cheeky split on r=1/c=31); this allows us to to
-                // two *inner* radix sorts on the rest of the bits
-                split = (int)countsOffsets[1];
-
-                if (!Util.ComputeOffsets(countsOffsets, len, c == invertC ? GetInvertStartIndex(32, r) : 0)) continue; // all in one group
-
-
-                if (ascending)
-                    Util.ApplyAscending32(countsOffsets, keys, workspace, 0, len, shift, groupMask);
-                else
-                    Util.ApplyDescending32(countsOffsets, keys, workspace, 0, len, shift, groupMask);
-
+                Util.ApplyAscending32(countsOffsets, keys, workspace, 0, len, shift, groupMask);                
                 Util.Swap(ref keys, ref workspace, ref reversed);
             }
             return (reversed, split);

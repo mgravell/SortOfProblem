@@ -43,17 +43,33 @@ namespace Sorted
 #endif
         }
 
-        //static void Execute()
-        //{
-        //    LsdRadixSort.MaxWorkerCount = 1;
-        //    var x = new float[] { 7, 0, -4, 12, }; // 9, 1, 0, 1, 4, 511, 2 };
-        //    //var r = new Random(x.Length);
-        //    //for (int i = 0; i < x.Length; i++)
-        //    //    x[i] = (uint)r.Next();
-        //    var y = new float[x.Length];
-        //    LsdRadixSort.ParallelSort<float>(x, y);
-        //    CheckSort<float>(x);
-        //}
+        static void Execute2()
+        {
+            LsdRadixSort.MaxWorkerCount = 1;
+            var x = new int[] { 7, 2147483116, 0, -4, -2147483438, 12, }; // 9, 1, 0, 1, 4, 511, 2 };
+            //var r = new Random(x.Length);
+            //for (int i = 0; i < x.Length; i++)
+            //    x[i] = (uint)r.Next();
+            var y = new int[x.Length];
+            var tmp = new int[x.Length];
+            for (int r = 1; r < 17; r++)
+            {
+                x.CopyTo(tmp, 0);
+                using (new BasicTimer($"r={r}, asc"))
+                {
+                    LsdRadixSort.Sort<int>(tmp, y, r: r, descending: false);
+                }
+                CheckSort<int>(tmp);
+
+                x.CopyTo(tmp, 0);
+                using (new BasicTimer($"r={r}, desc"))
+                {
+                    LsdRadixSort.Sort<int>(tmp, y, r: r, descending: true);
+                }
+                CheckSortDescending<int>(tmp);
+            }
+
+        }
         static void Execute()
         {
 
